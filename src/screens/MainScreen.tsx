@@ -45,14 +45,23 @@ const MainScreen: React.FC = () => {
   };
 
   const renderDiaryEntry = ({ item }: { item: DiaryEntry }) => (
-    <View style={styles.entryCard}>
-      <Text style={styles.entryDate}>
-        {new Date(item.createdAt).toLocaleDateString()}
-      </Text>
-      <Text style={styles.entryContent} numberOfLines={3}>
-        {item.content}
-      </Text>
-    </View>
+    <TouchableOpacity
+      onPress={() =>
+        router.push({
+          pathname: '/diary-edit',
+          params: { diaryId: item.id, childId: childId },
+        })
+      }
+    >
+      <View style={styles.entryCard}>
+        <Text style={styles.entryDate}>
+          {new Date(item.createdAt).toLocaleDateString()}
+        </Text>
+        <Text style={styles.entryContent} numberOfLines={3}>
+          {item.content}
+        </Text>
+      </View>
+    </TouchableOpacity>
   );
 
   return (
