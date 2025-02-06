@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,23 +17,27 @@ const MainScreen: React.FC = () => {
   const { childId } = useLocalSearchParams<{ childId: string }>();
   const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([]);
 
-  useEffect(() => {
-    loadDiaryEntries();
-  }, [childId]);
+  useFocusEffect(
+    useCallback(() => {
+      loadDiaryEntries();
+    }, [childId])
+  );
 
   const loadDiaryEntries = async () => {
     try {
       const db = await getDBConnection();
       const results = await db.getAllAsync<DiaryEntry>(
-        `SELECT * FROM diary_entry WHERE child_id = ? ORDER BY created_at DESC`,
+        `SELECT 
+          diary_entry.id, 
+          diary_entry.created_at AS createdAt, 
+          SUBSTR(diary_entry.content, 1, 10) AS content
+        FROM diary_entry
+        INNER JOIN child ON diary_entry.child_id = child.id
+        WHERE child.is_active = 1 AND child.id = ?
+        ORDER BY diary_entry.created_at DESC`,
         [childId]
       );
       
-      console.log("==============="+results+"===================");
-      // const entries: DiaryEntry[] = [];
-      // for (let i = 0; i < results.rows.length; i++) {
-      //   entries.push(results.rows.item(i));
-      // }
       setDiaryEntries(results);
     } catch (error) {
       console.error('Failed to load diary entries:', error);
