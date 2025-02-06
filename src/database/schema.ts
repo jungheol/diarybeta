@@ -37,6 +37,7 @@ export const createTables = async (db: SQLite.SQLiteDatabase) => {
       last_name TEXT NOT NULL,
       birth_date TEXT NOT NULL,
       photo_url TEXT,
+      is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS diary_entry (
