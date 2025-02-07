@@ -12,6 +12,7 @@ export interface DiaryEntry {
   childId: number;
   content: string;
   createdAt: string;
+  days_since_birth: number;
 }
 
 declare global {

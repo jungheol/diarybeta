@@ -30,7 +30,8 @@ const MainScreen: React.FC = () => {
         `SELECT 
           diary_entry.id, 
           diary_entry.created_at AS createdAt, 
-          SUBSTR(diary_entry.content, 1, 10) AS content
+          SUBSTR(diary_entry.content, 1, 10) AS content,
+          JULIANDAY(diary_entry.created_at) - JULIANDAY(child.birth_date) AS days_since_birth
         FROM diary_entry
         INNER JOIN child ON diary_entry.child_id = child.id
         WHERE child.is_active = 1 AND child.id = ?
@@ -44,25 +45,41 @@ const MainScreen: React.FC = () => {
     }
   };
 
-  const renderDiaryEntry = ({ item }: { item: DiaryEntry }) => (
-    <TouchableOpacity
-      onPress={() =>
-        router.push({
-          pathname: '/diary-edit',
-          params: { diaryId: item.id, childId: childId },
-        })
-      }
-    >
-      <View style={styles.entryCard}>
-        <Text style={styles.entryDate}>
-          {new Date(item.createdAt).toLocaleDateString()}
-        </Text>
-        <Text style={styles.entryContent} numberOfLines={3}>
-          {item.content}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
+  const renderDiaryEntry = ({ item }: { item: DiaryEntry }) => {
+    const createdDate = new Date(item.createdAt);
+    
+    return (
+      <TouchableOpacity
+        onPress={() =>
+          router.push({
+            pathname: '/diary-edit',
+            params: { diaryId: item.id, childId: childId },
+          })
+        }
+      >
+        <View style={styles.diaryCard}>
+          <View style={styles.daysSinceContainer}>
+            <Text style={styles.daysSince}>+{Math.floor(item.days_since_birth)}</Text>
+          </View>
+          <View style={styles.contentContainer}>
+            <Text style={styles.entryContent} numberOfLines={1}>
+              {item.content}
+            </Text>
+            <Text style={styles.entryDate}>
+              {createdDate.toLocaleString('ko-KR', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+              })}
+            </Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -90,10 +107,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F5F5',
   },
-  listContainer: {
+  listContainer: {  // 다이어리 리스트 뿌려주는 공간
     padding: 16,
   },
-  entryCard: {
+  diaryCard: {  // 다이어리 카드
+    flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
     padding: 16,
@@ -104,16 +122,31 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  entryDate: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
+  daysSinceContainer: {  // 날짜 text 들어가는 공간
+    width: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
   },
-  entryContent: {
+  daysSince: {  // +5 날짜 text 표시
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#666',
+  },
+  contentContainer: {  // 다이어리 내용과 날짜 나오는 영역
+    flex: 1,
+    justifyContent: 'center',
+  },
+  entryDate: {  // diary 날짜
+    fontSize: 14,
+    color: '#666'
+  },
+  entryContent: {  // diary 첫 줄 내용
     fontSize: 16,
     color: '#333',
+    marginBottom: 4,
   },
-  addButton: {
+  addButton: {  // addbutton 추후 수정
     position: 'absolute',
     bottom: 24,
     right: 24,
