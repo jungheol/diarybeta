@@ -4,6 +4,7 @@ export interface Child {
   lastName: string;
   birthDate: string;
   photoUrl?: string;
+  isActive: number;
   createdAt: string;
 }
 

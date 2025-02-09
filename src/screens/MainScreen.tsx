@@ -22,7 +22,7 @@ const MainScreen: React.FC = () => {
   const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([]);
   const [menuModalVisible, setMenuModalVisible] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
-  const [childInfo, setChildInfo] = useState<Child | null>(null);
+  const [childInfos, setChildInfos] = useState<Child[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   const loadDiaryEntries = async () => {
@@ -61,18 +61,20 @@ const MainScreen: React.FC = () => {
     }
   };
 
-  const loadChildInfo = async () => {
+  const loadChildInfos = async () => {
     try {
       const db = await getDBConnection();
-      const result = await db.getFirstAsync<Child>(
-        `SELECT first_name as firstName, last_name as lastName, photo_url as photoUrl FROM child WHERE id = ?`,
-        [childId]
+      const result = await db.getAllAsync<Child>(
+        `SELECT 
+          first_name as firstName, 
+          last_name as lastName, 
+          photo_url as photoUrl, 
+          is_active as isActive 
+        FROM child`
       );
-      if (result) {
-        setChildInfo(result);
-      }
+      setChildInfos(result);
     } catch (error) {
-      console.error('Failed to load child info:', error);
+      console.error('Failed to load child infos:', error);
     }
   };
 
@@ -115,7 +117,7 @@ const MainScreen: React.FC = () => {
   }, [childId, selectedDate]);
 
   useEffect(() => {
-    loadChildInfo();
+    loadChildInfos();
   }, [childId]);
 
   const renderDiaryEntry = ({ item }: { item: DiaryEntry }) => {
@@ -233,15 +235,29 @@ const MainScreen: React.FC = () => {
         >
           <View style={styles.modalOverlay}>
             <View style={styles.profileModal}>
-              <Image 
-                source={require('../../assets/images/profile.jpeg')} 
-                style={styles.modalProfileImage} 
-              />
-              {/* 실제 아이 이름 데이터를 사용하세요 */}
-              <Text style={styles.modalChildName}>
-                {childInfo ? `${childInfo.firstName} ${childInfo.lastName}` : 'Child Name'}
-              </Text>
-              <Text style={styles.modalActiveLabel}>활성화됨</Text>
+              {childInfos.length > 0 ? (
+                childInfos.map((child, index) => (
+                  <View key={index} style={styles.childRow}>
+                    <Image 
+                      source={child.photoUrl ? { uri: child.photoUrl } : require('../../assets/images/profile.jpeg')}
+                      style={styles.modalProfileImage}
+                    />
+                    <View style={styles.childInfoContainer}>
+                      <Text style={styles.modalChildName}>
+                        {child.lastName} {child.firstName}
+                      </Text>
+                      <Text style={[
+                        styles.childStatusLabel, 
+                        child.isActive === 1 ? styles.activeLabel : styles.inactiveLabel
+                      ]}>
+                        {child.isActive === 1 ? '활성화됨' : '비활성'}
+                      </Text>
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.modalChildName}>등록된 아이가 없습니다.</Text>
+              )}
               <TouchableOpacity style={styles.addChildButton} onPress={() => console.log("아이 추가")}>
                 <Text style={styles.addChildButtonText}>아이 추가</Text>
               </TouchableOpacity>
@@ -399,28 +415,39 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
   },
+  childRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 8,
+  },
+  childInfoContainer: {
+    marginLeft: 8,
+  },
   modalProfileImage: {
     width: 40,
     height: 40,
     borderRadius: 40,
-    marginBottom: 8,
   },
   modalChildName: {
     fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 4,
   },
-  modalActiveLabel: {
-    fontSize: 16,
-    color: '#007AFF',
-    marginBottom: 12,
+  childStatusLabel: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  activeLabel: {
+    color: 'green',
+  },
+  inactiveLabel: {
+    color: 'gray',
   },
   addChildButton: {
     backgroundColor: '#007AFF',
     borderRadius: 20,
     paddingVertical: 8,
     paddingHorizontal: 16,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   addChildButtonText: {
     color: '#FFF',
