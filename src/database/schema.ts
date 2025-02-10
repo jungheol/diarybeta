@@ -59,13 +59,13 @@ export const insertChild = async (
   db: SQLite.SQLiteDatabase,
   child: Omit<Child, 'id' | 'createdAt'>
 ): Promise<number> => {
-  const { firstName, lastName, birthDate, photoUrl } = child;
+  const { firstName, lastName, birthDate, photoUrl, isActive } = child;
 
   try {
     const result = await db.runAsync(
-      `INSERT INTO child (first_name, last_name, birth_date, photo_url)
-        VALUES (?, ?, ?, ?)`,
-      [firstName, lastName, birthDate, photoUrl || null]
+      `INSERT INTO child (first_name, last_name, birth_date, photo_url, is_active)
+        VALUES (?, ?, ?, ?, ?)`,
+      [firstName, lastName, birthDate, photoUrl || null, isActive]
     );
     
     return result.lastInsertRowId;

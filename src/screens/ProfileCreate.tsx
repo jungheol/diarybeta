@@ -58,6 +58,7 @@ const ProfileCreate: React.FC = () => {
         lastName,
         birthDate: birthDate!.toISOString(),
         photoUrl: photoUri || undefined,
+        isActive: 1,
       });
       
       router.replace({
