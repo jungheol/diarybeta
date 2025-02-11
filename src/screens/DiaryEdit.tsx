@@ -16,6 +16,7 @@ const DiaryEdit: React.FC = () => {
   const router = useRouter();
   const { diaryId, childId } = useLocalSearchParams<{ diaryId: string; childId: string }>();
   const [content, setContent] = useState<string>('');
+  const [createdAt, setCreatedAt] = useState<string>('');
 
   useEffect(() => {
     loadDiaryEntry();
@@ -25,12 +26,13 @@ const DiaryEdit: React.FC = () => {
     try {
       const db = await getDBConnection();
       // diary_entry 테이블에서 해당 diaryId의 내용을 가져옴
-      const result = await db.getFirstAsync<{ content:string }>(
-        `SELECT content FROM diary_entry WHERE id = ?`,
+      const result = await db.getFirstAsync<{ content:string; created_at:string }>(
+        `SELECT content, created_at FROM diary_entry WHERE id = ?`,
         [diaryId]
       );
       if (result) {
         setContent(result.content);
+        setCreatedAt(result.created_at);
       }
     } catch (error) {
       console.error('Failed to load diary entry:', error);
@@ -58,6 +60,9 @@ const DiaryEdit: React.FC = () => {
       style={styles.container}
     >
       <View style={styles.header}>
+        <Text style={styles.date}>
+          {new Date(createdAt).toLocaleDateString()} {new Date(createdAt).toLocaleTimeString()}
+        </Text>
         <TouchableOpacity
           style={[styles.saveButton, !content.trim() && styles.saveButtonDisabled]}
           onPress={handleUpdate}
@@ -89,11 +94,15 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E1E1E1',
+  },
+  date: {
+    fontSize: 16,
+    color: '#666',
   },
   saveButton: {
     width: 40,
