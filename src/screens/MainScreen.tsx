@@ -18,12 +18,12 @@ import { Child } from '../types';
 
 const MainScreen: React.FC = () => {
   const router = useRouter();
-  const { childId } = useLocalSearchParams<{ childId: string }>();
+  const [childInfos, setChildInfos] = useState<Child[]>([]);
   const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([]);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [activeChildId, setActiveChildId] = useState<number | null>(null);
   const [menuModalVisible, setMenuModalVisible] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
-  const [childInfos, setChildInfos] = useState<Child[]>([]);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   const loadDiaryEntries = async () => {
     try {
@@ -51,7 +51,7 @@ const MainScreen: React.FC = () => {
           AND diary_entry.created_at >= ? 
           AND diary_entry.created_at < ?
         ORDER BY diary_entry.created_at DESC`,
-        [childId, start, end]
+        [activeChildId, start, end]
       );
       
       // 사용하는 DB 라이브러리에 따라 실제 데이터 배열 추출 방식이 다를 수 있음.
@@ -66,6 +66,7 @@ const MainScreen: React.FC = () => {
       const db = await getDBConnection();
       const result = await db.getAllAsync<Child>(
         `SELECT 
+          id,
           first_name as firstName, 
           last_name as lastName, 
           photo_url as photoUrl, 
@@ -73,9 +74,56 @@ const MainScreen: React.FC = () => {
         FROM child`
       );
       setChildInfos(result);
+      const active = result.find(child => child.isActive === 1);
+      console.log(active?.id);
+      if (active) {
+        setActiveChildId(active.id);
+      }
     } catch (error) {
       console.error('Failed to load child infos:', error);
     }
+  };
+
+  const handleProfileChange = async (child: Child) => {
+    try {
+      if (child.isActive === 1) {
+        setProfileModalVisible(false);
+        return;
+      }
+
+      const db = await getDBConnection();
+      await db.runAsync('BEGIN TRANSACTION');
+    
+    try {
+      // 현재 활성화된 프로필 비활성화
+      await db.runAsync('UPDATE child SET is_active = 0 WHERE is_active = 1');
+      
+      // 선택한 프로필 활성화
+      await db.runAsync('UPDATE child SET is_active = 1 WHERE id = ?', [child.id]);
+      
+      // 트랜잭션 완료
+      await db.runAsync('COMMIT');
+      
+      // 데이터 새로고침
+      await loadChildInfos();
+      await loadDiaryEntries();
+      setProfileModalVisible(false);
+    } catch (error) {
+      // 에러 발생 시 트랜잭션 롤백
+      await db.runAsync('ROLLBACK');
+      throw error;
+    }
+    } catch (error) {
+      console.error('Failed to change profile:', error);
+    }
+  };
+
+  const handleAddChild = () => {
+    setProfileModalVisible(false);
+    router.push({
+      pathname: '/profile-create',
+      params: { isAdditionalProfile: 'true' }
+    });
   };
 
   const getCurrentMonthTitle = () => {
@@ -112,13 +160,27 @@ const MainScreen: React.FC = () => {
     }
   };
 
+  // 의존성: activeChildId나 selectedDate가 변경될 때 다이어리 로드
   useEffect(() => {
-    loadDiaryEntries();
-  }, [childId, selectedDate]);
+    if (activeChildId) {
+      loadDiaryEntries();
+    }
+  }, [activeChildId, selectedDate]);
 
+  // 컴포넌트가 마운트될 때 자녀 정보를 불러옴
   useEffect(() => {
     loadChildInfos();
-  }, [childId]);
+  }, []);
+
+  // 화면이 포커스될 때마다 다이어리 리스트 새로 로드 (새 다이어리 작성 후 돌아올 때 등)
+  useFocusEffect(
+    useCallback(() => {
+      if (activeChildId) {
+        loadDiaryEntries();
+      }
+    }, [activeChildId, selectedDate])
+  );
+
 
   const renderDiaryEntry = ({ item }: { item: DiaryEntry }) => {
     const createdDate = new Date(item.createdAt);
@@ -128,7 +190,7 @@ const MainScreen: React.FC = () => {
         onPress={() =>
           router.push({
             pathname: '/diary-edit',
-            params: { diaryId: item.id, childId: childId },
+            params: { diaryId: item.id, childId: activeChildId  },
           })
         }
       >
@@ -184,7 +246,7 @@ const MainScreen: React.FC = () => {
           style={styles.addButton}
           onPress={() => router.push({
             pathname: '/diary-write',
-            params: { childId: parseInt(childId) }
+            params: { childId: activeChildId }
           })}
         >
           <Text style={styles.addButtonText}>+</Text>
@@ -237,31 +299,39 @@ const MainScreen: React.FC = () => {
             <View style={styles.profileModal}>
               {childInfos.length > 0 ? (
                 childInfos.map((child, index) => (
-                  <View key={index} style={styles.childRow}>
-                    <Image 
-                      source={child.photoUrl ? { uri: child.photoUrl } : require('../../assets/images/profile.jpeg')}
-                      style={styles.modalProfileImage}
-                    />
-                    <View style={styles.childInfoContainer}>
-                      <Text style={styles.modalChildName}>
-                        {child.lastName} {child.firstName}
-                      </Text>
-                      <Text style={[
-                        styles.childStatusLabel, 
-                        child.isActive === 1 ? styles.activeLabel : styles.inactiveLabel
-                      ]}>
-                        {child.isActive === 1 ? '활성화됨' : '비활성'}
-                      </Text>
+                  <TouchableOpacity key={index} onPress={() => handleProfileChange(child)}>
+                    <View key={index} style={styles.childRow}>
+                      <Image 
+                        source={child.photoUrl ? { uri: child.photoUrl } : require('../../assets/images/profile.jpeg')}
+                        style={styles.modalProfileImage}
+                      />
+                      <View style={styles.childInfoContainer}>
+                        <Text style={styles.modalChildName}>
+                          {child.lastName} {child.firstName}
+                        </Text>
+                        <Text style={[
+                          styles.childStatusLabel, 
+                          child.isActive === 1 ? styles.activeLabel : styles.inactiveLabel
+                        ]}>
+                          {child.isActive === 1 ? '활성화됨' : '비활성'}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 ))
               ) : (
                 <Text style={styles.modalChildName}>등록된 아이가 없습니다.</Text>
               )}
-              <TouchableOpacity style={styles.addChildButton} onPress={() => console.log("아이 추가")}>
+              <TouchableOpacity 
+                style={styles.addChildButton} 
+                onPress={handleAddChild}  // 수정된 부분
+              >
                 <Text style={styles.addChildButtonText}>아이 추가</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setProfileModalVisible(false)}>
+              <TouchableOpacity 
+                style={styles.modalCloseBtn} 
+                onPress={() => setProfileModalVisible(false)}
+              >
                 <Text style={styles.modalCloseBtnText}>닫기</Text>
               </TouchableOpacity>
             </View>
@@ -453,6 +523,13 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 16,
   },
+  profileCreateModal: {
+    width: '90%',
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    padding: 16,
+    maxHeight: '80%',
+  }
 });
 
 export default MainScreen;

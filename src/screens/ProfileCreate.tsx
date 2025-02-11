@@ -9,16 +9,18 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePickerModal from "react-native-modal-datetime-picker";
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { getDBConnection, insertChild } from '../database/schema';
 
 const ProfileCreate: React.FC = () => {
   const router = useRouter();
+  const { isAdditionalProfile } = useLocalSearchParams<{ isAdditionalProfile?: string }>();
   const [firstName, setFirstName] = useState<string>('');
   const [lastName, setLastName] = useState<string>('');
   const [birthDate, setBirthDate] = useState<Date | null>(null);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [isDatePickerVisible, setDatePickerVisible] = useState<boolean>(false);
+  
 
   const isFormValid = firstName && lastName && birthDate;
 
@@ -53,6 +55,11 @@ const ProfileCreate: React.FC = () => {
 
     try {
       const db = await getDBConnection();
+
+      if (isAdditionalProfile === 'true') {
+        await db.runAsync('UPDATE child SET is_active = 0 WHERE is_active = 1');
+      }
+
       const childId = await insertChild(db, {
         firstName,
         lastName,
@@ -114,7 +121,9 @@ const ProfileCreate: React.FC = () => {
         disabled={!isFormValid}
         onPress={handleSubmit}
       >
-        <Text style={styles.buttonText}>시작하기</Text>
+        <Text style={styles.buttonText}>
+          {isAdditionalProfile === 'true' ? '프로필 추가' : '시작하기'}
+        </Text>
       </TouchableOpacity>
     </View>
   );
