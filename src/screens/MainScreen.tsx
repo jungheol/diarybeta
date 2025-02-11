@@ -196,7 +196,11 @@ const MainScreen: React.FC = () => {
       >
         <View style={styles.diaryCard}>
           <View style={styles.daysSinceContainer}>
-            <Text style={styles.daysSince}>+{Math.floor(item.days_since_birth)}</Text>
+            <Text style={styles.daysSince}>
+              {Math.floor(item.days_since_birth) >= 0 
+              ? `+${Math.floor(item.days_since_birth)}` 
+              : `${Math.floor(item.days_since_birth)}`}
+            </Text>
           </View>
           <View style={styles.contentContainer}>
             <Text style={styles.entryContent} numberOfLines={1}>
