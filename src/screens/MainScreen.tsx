@@ -13,13 +13,18 @@ import {
 import { PanGestureHandler, State as GestureState } from 'react-native-gesture-handler';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { getDBConnection } from '../database/schema';
-import { DiaryEntry } from '../types';
-import { Child } from '../types';
+import { DiaryEntry, Child } from '../types';
+
+interface GroupedDiaryEntry {
+  daysSinceBirth: number;
+  date: string;
+  entries: DiaryEntry[];
+}
 
 const MainScreen: React.FC = () => {
   const router = useRouter();
   const [childInfos, setChildInfos] = useState<Child[]>([]);
-  const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([]);
+  const [diaryEntries, setDiaryEntries] = useState<GroupedDiaryEntry[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [activeChildId, setActiveChildId] = useState<number | null>(null);
   const [menuModalVisible, setMenuModalVisible] = useState(false);
@@ -54,11 +59,29 @@ const MainScreen: React.FC = () => {
         [activeChildId, start, end]
       );
       
-      // 사용하는 DB 라이브러리에 따라 실제 데이터 배열 추출 방식이 다를 수 있음.
-      setDiaryEntries(results);
+      const groupedEntries = groupEntriesByDate(results);
+      setDiaryEntries(groupedEntries);
     } catch (error) {
       console.error('Failed to load diary entries:', error);
     }
+  };
+
+  const groupEntriesByDate = (entries: DiaryEntry[]): GroupedDiaryEntry[] => {
+    const groups: { [key: string]: DiaryEntry[] } = {};
+    
+    entries.forEach(entry => {
+      const date = new Date(entry.createdAt).toLocaleDateString('ko-KR');
+      if (!groups[date]) {
+        groups[date] = [];
+      }
+      groups[date].push(entry);
+    });
+
+    return Object.entries(groups).map(([date, entries]) => ({
+      daysSinceBirth: entries[0].days_since_birth, // Use the first entry's days
+      date,
+      entries
+    }));
   };
 
   const loadChildInfos = async () => {
@@ -182,45 +205,48 @@ const MainScreen: React.FC = () => {
   );
 
 
-  const renderDiaryEntry = ({ item }: { item: DiaryEntry }) => {
-    const createdDate = new Date(item.createdAt);
-    
-    return (
-      <TouchableOpacity
-        onPress={() =>
-          router.push({
-            pathname: '/diary-edit',
-            params: { diaryId: item.id, childId: activeChildId  },
-          })
-        }
-      >
-        <View style={styles.diaryCard}>
+  const renderEntry = (entry: DiaryEntry, isFirst: boolean) => (
+    <TouchableOpacity
+      key={entry.id}
+      onPress={() =>
+        router.push({
+          pathname: '/diary-edit',
+          params: { diaryId: entry.id, childId: activeChildId },
+        })
+      }
+    >
+      <View style={[styles.diaryCard, !isFirst && styles.subsequentEntry]}>
+        {isFirst && (
           <View style={styles.daysSinceContainer}>
             <Text style={styles.daysSince}>
-              {Math.floor(item.days_since_birth) >= 0 
-              ? `+${Math.floor(item.days_since_birth)}` 
-              : `${Math.floor(item.days_since_birth)}`}
+              {Math.floor(entry.days_since_birth) >= 0 
+                ? `+${Math.floor(entry.days_since_birth)}` 
+                : `${Math.floor(entry.days_since_birth)}`}
             </Text>
           </View>
-          <View style={styles.contentContainer}>
-            <Text style={styles.entryContent} numberOfLines={1}>
-              {item.content}
-            </Text>
-            <Text style={styles.entryDate}>
-              {createdDate.toLocaleString('ko-KR', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false
-              })}
-            </Text>
-          </View>
+        )}
+        <View style={[styles.contentContainer, !isFirst && styles.indentedContent]}>
+          <Text style={styles.entryContent} numberOfLines={1}>
+            {entry.content}
+          </Text>
+          <Text style={styles.entryDate}>
+            {new Date(entry.createdAt).toLocaleTimeString('ko-KR', {
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false
+            })}
+          </Text>
         </View>
-      </TouchableOpacity>
-    );
-  };
+      </View>
+    </TouchableOpacity>
+  );
+
+  // Render group of entries
+  const renderDiaryGroup = ({ item }: { item: GroupedDiaryEntry }) => (
+    <View style={styles.groupContainer}>
+      {item.entries.map((entry, index) => renderEntry(entry, index === 0))}
+    </View>
+  );
 
   return (
     <PanGestureHandler onHandlerStateChange={onHandlerStateChange}>
@@ -240,8 +266,8 @@ const MainScreen: React.FC = () => {
         {/* 다이어리 리스트 */}
         <FlatList
           data={diaryEntries}
-          renderItem={renderDiaryEntry}
-          keyExtractor={item => item.id?.toString() || ''}
+          renderItem={renderDiaryGroup}
+          keyExtractor={item => item.date}
           contentContainerStyle={styles.listContainer}
         />
         
@@ -377,17 +403,28 @@ const styles = StyleSheet.create({
   listContainer: {  // 다이어리 리스트 뿌려주는 공간
     padding: 16,
   },
-  diaryCard: {  // 다이어리 카드
-    flexDirection: 'row',
+  groupContainer: {
+    marginBottom: 16,
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  diaryCard: {
+    flexDirection: 'row',
+    padding: 16,
+    backgroundColor: 'transparent',
+  },
+  subsequentEntry: {
+    paddingTop: 8,
+    paddingBottom: 8,
+    paddingLeft: 82, // Adjust this value based on daysSinceContainer width + padding
+  },
+  indentedContent: {
+    marginLeft: 0,
   },
   daysSinceContainer: {  // 날짜 text 들어가는 공간
     width: 50,
