@@ -299,19 +299,45 @@ const MainScreen: React.FC = () => {
         >
           <View style={styles.modalOverlay}>
             <View style={styles.menuModal}>
-              <TouchableOpacity style={styles.modalItem} onPress={() => { console.log("월별보기"); setMenuModalVisible(false); }}>
+              <TouchableOpacity
+                style={styles.modalItem}
+                onPress={() => {
+                  setMenuModalVisible(false);
+                }}
+              >
                 <Text style={styles.modalItemText}>월별보기</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalItem} onPress={() => { console.log("즐겨찾기"); setMenuModalVisible(false); }}>
+              <TouchableOpacity
+                style={styles.modalItem}
+                onPress={() => {
+                  setMenuModalVisible(false);
+                  router.push('/favorites'); // 즐겨찾기 화면으로 이동
+                }}
+              >
                 <Text style={styles.modalItemText}>즐겨찾기</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalItem} onPress={() => { console.log("검색"); setMenuModalVisible(false); }}>
+              <TouchableOpacity
+                style={styles.modalItem}
+                onPress={() => {
+                  console.log("검색");
+                  setMenuModalVisible(false);
+                }}
+              >
                 <Text style={styles.modalItemText}>검색</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalItem} onPress={() => { console.log("설정"); setMenuModalVisible(false); }}>
+              <TouchableOpacity
+                style={styles.modalItem}
+                onPress={() => {
+                  console.log("설정");
+                  setMenuModalVisible(false);
+                }}
+              >
                 <Text style={styles.modalItemText}>설정</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setMenuModalVisible(false)}>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setMenuModalVisible(false)}
+              >
                 <Text style={styles.modalCloseBtnText}>닫기</Text>
               </TouchableOpacity>
             </View>
