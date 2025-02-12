@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { getDBConnection } from '../database/schema';
@@ -54,6 +55,29 @@ const DiaryEdit: React.FC = () => {
     }
   };
 
+  const handleDelete = async () => {
+    Alert.alert(
+      "다이어리 삭제",
+      "정말 이 다이어리를 삭제하시겠습니까?",
+      [
+        { text: "취소", style: "cancel" },
+        {
+          text: "삭제",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const db = await getDBConnection();
+              await db.runAsync(`DELETE FROM diary_entry WHERE id = ?`, [diaryId]);
+              router.back();
+            } catch (error) {
+              console.error('Failed to delete diary entry:', error);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -63,13 +87,18 @@ const DiaryEdit: React.FC = () => {
         <Text style={styles.date}>
           {new Date(createdAt).toLocaleDateString()} {new Date(createdAt).toLocaleTimeString()}
         </Text>
-        <TouchableOpacity
-          style={[styles.saveButton, !content.trim() && styles.saveButtonDisabled]}
-          onPress={handleUpdate}
-          disabled={!content.trim()}
-        >
-          <Text style={styles.saveButtonText}>✓</Text>
-        </TouchableOpacity>
+        <View style={styles.buttonsContainer}>
+          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+            <Text style={styles.deleteButtonText}>삭제</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.saveButton, !content.trim() && styles.saveButtonDisabled]}
+            onPress={handleUpdate}
+            disabled={!content.trim()}
+          >
+            <Text style={styles.saveButtonText}>✓</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       
       <ScrollView style={styles.contentContainer}>
@@ -103,6 +132,23 @@ const styles = StyleSheet.create({
   date: {
     fontSize: 16,
     color: '#666',
+  },
+  buttonsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  deleteButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  deleteButtonText: {
+    fontSize: 16,
+    color: '#FFFFFF',
   },
   saveButton: {
     width: 40,

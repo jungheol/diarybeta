@@ -25,7 +25,7 @@ const DiaryWrite: React.FC = () => {
       const db = await getDBConnection();
       await db.runAsync(
         `INSERT INTO diary_entry (child_id, content, created_at)
-          VALUES (?, ?, datetime('now'))`,
+          VALUES (?, ?, datetime('now', 'localtime'))`,
         [childId, content.trim()]
       );
       
