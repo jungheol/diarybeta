@@ -44,6 +44,7 @@ export const createTables = async (db: SQLite.SQLiteDatabase) => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       child_id INTEGER,
       content TEXT NOT NULL,
+      bookmark INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (child_id) REFERENCES child (id)
     );

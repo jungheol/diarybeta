@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Modal,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { getDBConnection } from '../database/schema';
@@ -18,6 +19,8 @@ const DiaryEdit: React.FC = () => {
   const { diaryId, childId } = useLocalSearchParams<{ diaryId: string; childId: string }>();
   const [content, setContent] = useState<string>('');
   const [createdAt, setCreatedAt] = useState<string>('');
+  const [bookmark, setBookmark] = useState<number>(0);
+  const [menuModalVisible, setMenuModalVisible] = useState<boolean>(false);
 
   useEffect(() => {
     loadDiaryEntry();
@@ -27,13 +30,14 @@ const DiaryEdit: React.FC = () => {
     try {
       const db = await getDBConnection();
       // diary_entry 테이블에서 해당 diaryId의 내용을 가져옴
-      const result = await db.getFirstAsync<{ content:string; created_at:string }>(
-        `SELECT content, created_at FROM diary_entry WHERE id = ?`,
+      const result = await db.getFirstAsync<{ content:string; created_at:string, bookmark: number }>(
+        `SELECT content, created_at, bookmark FROM diary_entry WHERE id = ?`,
         [diaryId]
       );
       if (result) {
         setContent(result.content);
         setCreatedAt(result.created_at);
+        setBookmark(result.bookmark);
       }
     } catch (error) {
       console.error('Failed to load diary entry:', error);
@@ -78,6 +82,25 @@ const DiaryEdit: React.FC = () => {
     );
   };
 
+  const handleToggleBookmark = async () => {
+    try {
+      const newBookmark = bookmark === 1 ? 0 : 1;
+      const db = await getDBConnection();
+      await db.runAsync(`UPDATE diary_entry SET bookmark = ? WHERE id = ?`, [newBookmark, diaryId]);
+      setBookmark(newBookmark);
+    } catch (error) {
+      console.error('Failed to toggle bookmark:', error);
+    }
+  };
+
+  const openMenuModal = () => {
+    setMenuModalVisible(true);
+  };
+
+  const closeMenuModal = () => {
+    setMenuModalVisible(false);
+  };
+
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -88,8 +111,8 @@ const DiaryEdit: React.FC = () => {
           {new Date(createdAt).toLocaleDateString()} {new Date(createdAt).toLocaleTimeString()}
         </Text>
         <View style={styles.buttonsContainer}>
-          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-            <Text style={styles.deleteButtonText}>삭제</Text>
+          <TouchableOpacity style={styles.moreButton} onPress={openMenuModal}>
+            <Text style={styles.moreButtonText}>⋮</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.saveButton, !content.trim() && styles.saveButtonDisabled]}
@@ -97,7 +120,7 @@ const DiaryEdit: React.FC = () => {
             disabled={!content.trim()}
           >
             <Text style={styles.saveButtonText}>✓</Text>
-          </TouchableOpacity>
+           </TouchableOpacity>
         </View>
       </View>
       
@@ -112,6 +135,28 @@ const DiaryEdit: React.FC = () => {
           autoFocus
         />
       </ScrollView>
+      <Modal
+        visible={menuModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={closeMenuModal}
+      >
+        <TouchableOpacity style={styles.modalOverlay} onPress={closeMenuModal}>
+          <View style={styles.modalContent}>
+            <TouchableOpacity style={styles.modalItem} onPress={handleToggleBookmark}>
+              <Text style={styles.modalItemText}>
+                {bookmark === 1 ? '즐겨찾기 해제' : '즐겨찾기'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalItem} onPress={handleDelete}>
+              <Text style={[styles.modalItemText, { color: '#FF3B30' }]}>삭제하기</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalCancel} onPress={closeMenuModal}>
+              <Text style={styles.modalCancelText}>취소</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -133,7 +178,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
+  moreButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  moreButtonText: {
+    fontSize: 24,
+    color: '#FFFFFF',
+  },
   buttonsContainer: {
+    justifyContent: 'space-between',
+    width: 90,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -174,6 +233,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     minHeight: 200,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFF',
+    padding: 20,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  modalItem: {
+    paddingVertical: 12,
+  },
+  modalItemText: {
+    fontSize: 18,
+    textAlign: 'center',
+  },
+  modalCancel: {
+    marginTop: 10,
+    paddingVertical: 12,
+  },
+  modalCancelText: {
+    fontSize: 18,
+    textAlign: 'center',
+    color: '#007AFF',
   },
 });
 
