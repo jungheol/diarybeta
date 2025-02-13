@@ -14,6 +14,7 @@ export interface DiaryEntry {
   content: string;
   createdAt: string;
   days_since_birth: number;
+  thumbnailUri?: string;
 }
 
 declare global {

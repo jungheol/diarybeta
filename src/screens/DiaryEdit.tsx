@@ -10,7 +10,10 @@ import {
   ScrollView,
   Alert,
   Modal,
+  Image,
+  Dimensions,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { getDBConnection } from '../database/schema';
 
@@ -21,6 +24,7 @@ const DiaryEdit: React.FC = () => {
   const [createdAt, setCreatedAt] = useState<string>('');
   const [bookmark, setBookmark] = useState<number>(0);
   const [menuModalVisible, setMenuModalVisible] = useState<boolean>(false);
+  const [images, setImages] = useState<string[]>([]);
 
   useEffect(() => {
     loadDiaryEntry();
@@ -34,14 +38,43 @@ const DiaryEdit: React.FC = () => {
         `SELECT content, created_at, bookmark FROM diary_entry WHERE id = ?`,
         [diaryId]
       );
+
+      const imageResults = await db.getAllAsync<{ image_uri: string }>(
+        `SELECT image_uri FROM diary_picture WHERE diary_entry_id = ? ORDER BY created_at ASC`,
+        [diaryId]
+      );
+
       if (result) {
         setContent(result.content);
         setCreatedAt(result.created_at);
         setBookmark(result.bookmark);
       }
+
+      setImages(imageResults.map(img => img.image_uri));
     } catch (error) {
       console.error('Failed to load diary entry:', error);
     }
+  };
+
+  const pickImage = async () => {
+    if (images.length >= 10) {
+      Alert.alert('알림', '사진은 최대 10장까지만 추가할 수 있습니다.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled && result.assets[0].uri) {
+      setImages([...images, result.assets[0].uri]);
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setImages(images.filter((_, i) => i !== index));
   };
 
   const handleUpdate = async () => {
@@ -49,10 +82,25 @@ const DiaryEdit: React.FC = () => {
 
     try {
       const db = await getDBConnection();
-      await db.runAsync(
-        `UPDATE diary_entry SET content = ? WHERE id = ?`,
-        [content.trim(), diaryId]
-      );
+      await db.withTransactionAsync(async () => {
+        // 다이어리 내용 업데이트
+        await db.runAsync(
+          `UPDATE diary_entry SET content = ? WHERE id = ?`,
+          [content.trim(), diaryId]
+        );
+        // 기존 이미지 삭제
+        await db.runAsync(
+          `DELETE FROM diary_picture WHERE diary_entry_id = ?`,
+          [diaryId]
+        );
+        // 새 이미지 삽입 (images 배열에 저장된 이미지 URI 사용)
+        for (const imageUri of images) {
+          await db.runAsync(
+            `INSERT INTO diary_picture (diary_entry_id, image_uri) VALUES (?, ?)`,
+            [diaryId, imageUri]
+          );
+        }
+      });
       router.back(); // 업데이트 후 MainScreen으로 돌아감
     } catch (error) {
       console.error('Failed to update diary entry:', error);
@@ -134,6 +182,28 @@ const DiaryEdit: React.FC = () => {
           textAlignVertical="top"
           autoFocus
         />
+        <View style={styles.imageContainer}>
+          {images.map((uri, index) => (
+            <View key={index} style={styles.imageWrapper}>
+              <Image source={{ uri }} style={styles.image} />
+              <TouchableOpacity 
+                style={styles.removeButtonContainer}
+                onPress={() => removeImage(index)}
+              >
+                <Text style={styles.removeButton}>×</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+          
+          {images.length < 10 && (
+            <TouchableOpacity 
+              style={styles.addImageButton} 
+              onPress={pickImage}
+            >
+              <Text style={styles.addImageButtonText}>+</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </ScrollView>
       <Modal
         visible={menuModalVisible}
@@ -260,6 +330,49 @@ const styles = StyleSheet.create({
     fontSize: 18,
     textAlign: 'center',
     color: '#007AFF',
+  },
+  imageContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+    gap: 8,
+  },
+  imageWrapper: {
+      position: 'relative',
+      marginHorizontal: 5,
+      marginVertical: 5,
+  },
+  image: {  // 해상도에 따른 이미지 사이즈 조절 필요
+    width: (Dimensions.get('window').width - 60),
+    height: (Dimensions.get('window').width - 60),
+    borderRadius: 4,
+  },
+  removeButtonContainer: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  removeButton: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  addImageButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 4,
+    backgroundColor: '#E1E1E1',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addImageButtonText: {
+    fontSize: 24,
+    color: '#666',
   },
 });
 

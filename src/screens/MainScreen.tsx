@@ -48,7 +48,10 @@ const MainScreen: React.FC = () => {
           diary_entry.id, 
           diary_entry.created_at AS createdAt, 
           SUBSTR(diary_entry.content, 1, 10) AS content,
-          JULIANDAY(diary_entry.created_at) - JULIANDAY(child.birth_date) AS days_since_birth
+          JULIANDAY(diary_entry.created_at) - JULIANDAY(child.birth_date) AS days_since_birth,
+          (SELECT image_uri FROM diary_picture 
+         WHERE diary_entry_id = diary_entry.id 
+         ORDER BY created_at ASC LIMIT 1) as thumbnailUri
         FROM diary_entry
         INNER JOIN child ON diary_entry.child_id = child.id
         WHERE child.is_active = 1 
@@ -98,7 +101,6 @@ const MainScreen: React.FC = () => {
       );
       setChildInfos(result);
       const active = result.find(child => child.isActive === 1);
-      console.log(active?.id);
       if (active) {
         setActiveChildId(active.id);
       }
@@ -226,15 +228,23 @@ const MainScreen: React.FC = () => {
           </View>
         )}
         <View style={[styles.contentContainer, !isFirst && styles.indentedContent]}>
-          <Text style={styles.entryContent} numberOfLines={1}>
-            {entry.content}
-          </Text>
+          <View style={styles.contentRow}>
+            <Text style={styles.entryContent} numberOfLines={1}>
+              {entry.content}
+            </Text>
+            {entry.thumbnailUri && (
+              <Image 
+                source={{ uri: entry.thumbnailUri }} 
+                style={styles.thumbnailImage}
+              />
+            )}
+          </View>
           <Text style={styles.entryDate}>
-            {new Date(entry.createdAt).toLocaleTimeString('ko-KR', {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false
-            })}
+          {new Date(entry.createdAt).toLocaleTimeString('ko-KR', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          })}
           </Text>
         </View>
       </View>
@@ -476,6 +486,12 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 4,
   },
+  thumbnailImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
   addButton: {  // addbutton 추후 수정
     position: 'absolute',
     bottom: 24,
@@ -596,7 +612,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 16,
     maxHeight: '80%',
-  }
+  },
+  contentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
 });
 
 export default MainScreen;
