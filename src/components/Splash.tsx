@@ -4,6 +4,7 @@ import {
   Image,
   StyleSheet,
   Animated,
+  Dimensions
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { createTables, getDBConnection } from '../database/schema';
@@ -86,7 +87,7 @@ const Splash: React.FC = () => {
   return (
     <View style={styles.container}>
       <Animated.Image
-        source={require('../../assets/images/app-icon.png')}
+        source={require('../../assets/images/splash-icon.png')}
         style={[
           styles.logo,
           {
@@ -106,8 +107,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   logo: {
-    width: 120,
-    height: 120,
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').height,
     resizeMode: 'contain',
   },
 });
