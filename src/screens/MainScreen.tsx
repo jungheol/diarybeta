@@ -29,6 +29,7 @@ const MainScreen: React.FC = () => {
   const [activeChildId, setActiveChildId] = useState<number | null>(null);
   const [menuModalVisible, setMenuModalVisible] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
+  const activeChild = childInfos.find(child => child.id === activeChildId);
 
   const loadDiaryEntries = async () => {
     try {
@@ -50,8 +51,8 @@ const MainScreen: React.FC = () => {
           SUBSTR(diary_entry.content, 1, 10) AS content,
           JULIANDAY(diary_entry.created_at) - JULIANDAY(child.birth_date) AS days_since_birth,
           (SELECT image_uri FROM diary_picture 
-         WHERE diary_entry_id = diary_entry.id 
-         ORDER BY created_at ASC LIMIT 1) as thumbnailUri
+        WHERE diary_entry_id = diary_entry.id 
+        ORDER BY created_at ASC LIMIT 1) as thumbnailUri
         FROM diary_entry
         INNER JOIN child ON diary_entry.child_id = child.id
         WHERE child.is_active = 1 
@@ -266,8 +267,8 @@ const MainScreen: React.FC = () => {
           <TouchableOpacity style={styles.profileBtn} onPress={() => setProfileModalVisible(true)}>
             {/* 실제 사진 URI와 아이 데이터를 사용하세요 */}
             <Image 
-              source={require('../../assets/images/profile.jpeg') } 
-              style={styles.profileImage} 
+              source={activeChild?.photoUrl ? { uri: activeChild.photoUrl } : require('../../assets/images/profile.jpeg')}
+              style={styles.profileImage}
             />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{getCurrentMonthTitle()}</Text>
