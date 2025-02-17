@@ -7,7 +7,10 @@ import {
   Dimensions
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { createTables, getDBConnection } from '../database/schema';
+
+SplashScreen.preventAutoHideAsync();
 
 const Splash: React.FC = () => {
   const router = useRouter();
@@ -56,32 +59,44 @@ const Splash: React.FC = () => {
 
   useEffect(() => {
     if (!isDBInitialized) return;
-  
-    Animated.sequence([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 1000,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 1000,
-        delay: 1000,
-        useNativeDriver: true,
-      }),
-    ]).start(async () => {
-      const activeChildId = await getActiveChildId();
-      if (activeChildId) {
-        // activeChildId가 있을 경우, MainScreen으로 childId 파라미터와 함께 이동
-        router.replace({
-          pathname: '/main',
-          params: { childId: activeChildId.toString() },
+    const handleSplashAnimation = async () => {
+      try {
+        // 커스텀 애니메이션 시작
+        await new Promise((resolve) => {
+          Animated.sequence([
+            Animated.timing(fadeAnim, {
+              toValue: 1,
+              duration: 1000,
+              useNativeDriver: true,
+            }),
+            Animated.timing(fadeAnim, {
+              toValue: 0,
+              duration: 1000,
+              delay: 1000,
+              useNativeDriver: true,
+            }),
+          ]).start(resolve);
         });
-      } else {
-        // activeChildId가 없으면 프로필 생성 화면으로 이동
-        router.replace('/profile-create');
+
+        // 네이티브 스플래시 스크린 숨기기
+        await SplashScreen.hideAsync();
+
+        // 라우팅 처리
+        const activeChildId = await getActiveChildId();
+        if (activeChildId) {
+          router.replace({
+            pathname: '/main',
+            params: { childId: activeChildId.toString() },
+          });
+        } else {
+          router.replace('/profile-create');
+        }
+      } catch (error) {
+        console.error('Error during splash animation:', error);
       }
-    });
+    };
+
+    handleSplashAnimation();
   }, [isDBInitialized]);
 
   return (
