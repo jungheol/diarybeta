@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    top: 16,
+    height: 60,
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E1E1E1',
