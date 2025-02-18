@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   TextInput,
@@ -23,6 +23,8 @@ const DiaryWrite: React.FC = () => {
   const [text, setText] = useState<string>('');
   const [images, setImages] = useState<DiaryImage[]>([]);
   const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
+  const inputRefs = useRef<TextInput[]>([]);
+  const lastFocusedInput = useRef<number>(0);
   const currentDate = new Date();
 
   const insertImageMarker = (imageId: string, selectionStart: number) => {
@@ -51,7 +53,13 @@ const DiaryWrite: React.FC = () => {
       };
       
       setImages([...images, newImage]);
-      insertImageMarker(imageId, selection.start);
+      setTimeout(() => {
+        const currentInput = inputRefs.current[lastFocusedInput.current];
+        if (currentInput) {
+          currentInput.focus();
+          insertImageMarker(imageId, selection.start);
+        }
+      }, 100);
     }
   };
 
@@ -116,6 +124,11 @@ const DiaryWrite: React.FC = () => {
       return (
         <TextInput
           key={index}
+          ref={(ref) => {
+            if (ref) {
+              inputRefs.current[index] = ref;
+            }
+          }}
           style={styles.input}
           multiline
           value={part}
@@ -124,7 +137,13 @@ const DiaryWrite: React.FC = () => {
             newParts[index] = newText;
             setText(newParts.join(''));
           }}
-          onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
+          onSelectionChange={(event) => {
+            setSelection(event.nativeEvent.selection);
+            lastFocusedInput.current = index;
+          }}
+          onFocus={() => {
+            lastFocusedInput.current = index;
+          }}
         />
       );
     });
@@ -134,6 +153,7 @@ const DiaryWrite: React.FC = () => {
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
     >
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -157,7 +177,9 @@ const DiaryWrite: React.FC = () => {
         <View style={styles.editorContainer}>
           {renderContent()}
         </View>
+      </ScrollView>
         
+      <View style={styles.buttonContainer}>
         <TouchableOpacity 
           style={[styles.addImageButton, images.length >= 10 && styles.addImageButtonDisabled]} 
           onPress={pickImage}
@@ -165,7 +187,7 @@ const DiaryWrite: React.FC = () => {
         >
           <Text style={styles.addImageButtonText}>사진 추가</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </View>
     </KeyboardAvoidingView>
   );
 };
@@ -174,6 +196,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    paddingTop: 20,
   },
   header: {
     flexDirection: 'row',
@@ -251,6 +274,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  buttonContainer: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E1E1E1',
+    backgroundColor: '#FFF',
   },
   addImageButton: {
     marginTop: 16,
