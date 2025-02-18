@@ -136,9 +136,14 @@ const DiaryWrite: React.FC = () => {
       style={styles.container}
     >
       <View style={styles.header}>
-        <Text style={styles.date}>
-          {currentDate.toLocaleDateString()} {currentDate.toLocaleTimeString()}
-        </Text>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Text style={styles.backButton}>◀</Text>
+          </TouchableOpacity>
+          <Text style={styles.date}>
+            {currentDate.toLocaleDateString()} {currentDate.toLocaleTimeString()}
+          </Text>
+        </View>
         <TouchableOpacity
           style={[styles.saveButton, !text.trim() && styles.saveButtonDisabled]}
           onPress={handleSave}
@@ -174,9 +179,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    top: 16,
+    padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E1E1E1',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  backButton: {
+    fontSize: 24,
+    color: '#666',
   },
   date: {
     fontSize: 16,
@@ -250,7 +265,7 @@ const styles = StyleSheet.create({
   },
   addImageButtonText: {
     fontSize: 16,
-    color: '#666',
+    color: '#FFF',
     fontWeight: 'bold',
   },
 });
