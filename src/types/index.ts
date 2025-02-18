@@ -17,6 +17,16 @@ export interface DiaryEntry {
   thumbnailUri?: string;
 }
 
+export interface DiaryImage {
+  id: string;
+  uri: string;
+}
+
+export interface DiaryContent {
+  text: string;
+  images: DiaryImage[];
+}
+
 declare global {
   namespace ReactNavigation {
     interface RootParamList {

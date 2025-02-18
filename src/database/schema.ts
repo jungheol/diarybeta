@@ -31,6 +31,7 @@ export const createTables = async (db: SQLite.SQLiteDatabase) => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       diary_entry_id INTEGER,
       image_uri TEXT NOT NULL,
+      image_id TEXT NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (diary_entry_id) REFERENCES diary_entry (id) ON DELETE CASCADE
     );

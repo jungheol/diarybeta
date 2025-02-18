@@ -9,22 +9,24 @@ import {
   Platform,
   ScrollView,
   Alert,
-  Modal,
   Image,
   Dimensions,
+  Modal,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { getDBConnection } from '../database/schema';
+import { DiaryImage } from '../types';
 
 const DiaryEdit: React.FC = () => {
   const router = useRouter();
   const { diaryId, childId } = useLocalSearchParams<{ diaryId: string; childId: string }>();
-  const [content, setContent] = useState<string>('');
+  const [text, setText] = useState<string>('');
+  const [images, setImages] = useState<DiaryImage[]>([]);
+  const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
   const [createdAt, setCreatedAt] = useState<string>('');
   const [bookmark, setBookmark] = useState<number>(0);
   const [menuModalVisible, setMenuModalVisible] = useState<boolean>(false);
-  const [images, setImages] = useState<string[]>([]);
 
   useEffect(() => {
     loadDiaryEntry();
@@ -33,27 +35,37 @@ const DiaryEdit: React.FC = () => {
   const loadDiaryEntry = async () => {
     try {
       const db = await getDBConnection();
-      // diary_entry 테이블에서 해당 diaryId의 내용을 가져옴
-      const result = await db.getFirstAsync<{ content:string; created_at:string, bookmark: number }>(
+      const result = await db.getFirstAsync<{ content: string; created_at: string; bookmark: number }>(
         `SELECT content, created_at, bookmark FROM diary_entry WHERE id = ?`,
         [diaryId]
       );
 
-      const imageResults = await db.getAllAsync<{ image_uri: string }>(
-        `SELECT image_uri FROM diary_picture WHERE diary_entry_id = ? ORDER BY created_at ASC`,
+      const imageResults = await db.getAllAsync<{ image_uri: string; image_id: string }>(
+        `SELECT image_uri, image_id FROM diary_picture 
+         WHERE diary_entry_id = ? 
+         ORDER BY created_at ASC`,
         [diaryId]
       );
 
       if (result) {
-        setContent(result.content);
+        setText(result.content);
         setCreatedAt(result.created_at);
         setBookmark(result.bookmark);
       }
 
-      setImages(imageResults.map(img => img.image_uri));
+      setImages(imageResults.map(img => ({
+        id: img.image_id,
+        uri: img.image_uri
+      })));
     } catch (error) {
       console.error('Failed to load diary entry:', error);
     }
+  };
+
+  const insertImageMarker = (imageId: string, selectionStart: number) => {
+    const before = text.slice(0, selectionStart);
+    const after = text.slice(selectionStart);
+    setText(`${before}\n[IMG:${imageId}]\n${after}`);
   };
 
   const pickImage = async () => {
@@ -69,39 +81,48 @@ const DiaryEdit: React.FC = () => {
     });
 
     if (!result.canceled && result.assets[0].uri) {
-      setImages([...images, result.assets[0].uri]);
+      const imageId = `${Date.now()}`;
+      const newImage: DiaryImage = {
+        id: imageId,
+        uri: result.assets[0].uri
+      };
+      
+      setImages([...images, newImage]);
+      insertImageMarker(imageId, selection.start);
     }
   };
 
-  const removeImage = (index: number) => {
-    setImages(images.filter((_, i) => i !== index));
+  const removeImage = (imageId: string) => {
+    const newText = text.replace(new RegExp(`\\n?\\[IMG:${imageId}\\]\\n?`, 'g'), '\n');
+    setText(newText.replace(/\n{3,}/g, '\n\n'));
+    setImages(images.filter(img => img.id !== imageId));
   };
 
   const handleUpdate = async () => {
-    if (!content.trim()) return;
+    if (!text.trim()) return;
 
     try {
       const db = await getDBConnection();
       await db.withTransactionAsync(async () => {
-        // 다이어리 내용 업데이트
         await db.runAsync(
           `UPDATE diary_entry SET content = ? WHERE id = ?`,
-          [content.trim(), diaryId]
+          [text.trim(), diaryId]
         );
-        // 기존 이미지 삭제
+
         await db.runAsync(
           `DELETE FROM diary_picture WHERE diary_entry_id = ?`,
           [diaryId]
         );
-        // 새 이미지 삽입 (images 배열에 저장된 이미지 URI 사용)
-        for (const imageUri of images) {
+
+        for (const image of images) {
           await db.runAsync(
-            `INSERT INTO diary_picture (diary_entry_id, image_uri) VALUES (?, ?)`,
-            [diaryId, imageUri]
+            `INSERT INTO diary_picture (diary_entry_id, image_uri, image_id) VALUES (?, ?, ?)`,
+            [diaryId, image.uri, image.id]
           );
         }
       });
-      router.back(); // 업데이트 후 MainScreen으로 돌아감
+      
+      router.back();
     } catch (error) {
       console.error('Failed to update diary entry:', error);
     }
@@ -134,19 +155,54 @@ const DiaryEdit: React.FC = () => {
     try {
       const newBookmark = bookmark === 1 ? 0 : 1;
       const db = await getDBConnection();
-      await db.runAsync(`UPDATE diary_entry SET bookmark = ? WHERE id = ?`, [newBookmark, diaryId]);
+      await db.runAsync(
+        `UPDATE diary_entry SET bookmark = ? WHERE id = ?`, 
+        [newBookmark, diaryId]
+      );
       setBookmark(newBookmark);
+      setMenuModalVisible(false);
     } catch (error) {
       console.error('Failed to toggle bookmark:', error);
     }
   };
 
-  const openMenuModal = () => {
-    setMenuModalVisible(true);
-  };
-
-  const closeMenuModal = () => {
-    setMenuModalVisible(false);
+  const renderContent = () => {
+    const parts = text.split(/(\[IMG:[^\]]+\])/);
+    
+    return parts.map((part, index) => {
+      const match = part.match(/\[IMG:([^\]]+)\]/);
+      if (match) {
+        const imageId = match[1];
+        const image = images.find(img => img.id === imageId);
+        if (image) {
+          return (
+            <View key={index} style={styles.imageWrapper}>
+              <Image source={{ uri: image.uri }} style={styles.image} />
+              <TouchableOpacity 
+                style={styles.removeButtonContainer}
+                onPress={() => removeImage(image.id)}
+              >
+                <Text style={styles.removeButtonText}>×</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        }
+      }
+      return (
+        <TextInput
+          key={index}
+          style={styles.input}
+          multiline
+          value={part}
+          onChangeText={(newText) => {
+            const newParts = [...parts];
+            newParts[index] = newText;
+            setText(newParts.join(''));
+          }}
+          onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
+        />
+      );
+    });
   };
 
   return (
@@ -159,69 +215,67 @@ const DiaryEdit: React.FC = () => {
           {new Date(createdAt).toLocaleDateString()} {new Date(createdAt).toLocaleTimeString()}
         </Text>
         <View style={styles.buttonsContainer}>
-          <TouchableOpacity style={styles.moreButton} onPress={openMenuModal}>
+          <TouchableOpacity 
+            style={styles.moreButton} 
+            onPress={() => setMenuModalVisible(true)}
+          >
             <Text style={styles.moreButtonText}>⋮</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.saveButton, !content.trim() && styles.saveButtonDisabled]}
+            style={[styles.saveButton, !text.trim() && styles.saveButtonDisabled]}
             onPress={handleUpdate}
-            disabled={!content.trim()}
+            disabled={!text.trim()}
           >
             <Text style={styles.saveButtonText}>✓</Text>
-           </TouchableOpacity>
+          </TouchableOpacity>
         </View>
       </View>
-      
+
       <ScrollView style={styles.contentContainer}>
-        <TextInput
-          style={styles.input}
-          multiline
-          placeholder="일기를 수정하세요..."
-          value={content}
-          onChangeText={setContent}
-          textAlignVertical="top"
-          autoFocus
-        />
-        <View style={styles.imageContainer}>
-          {images.map((uri, index) => (
-            <View key={index} style={styles.imageWrapper}>
-              <Image source={{ uri }} style={styles.image} />
-              <TouchableOpacity 
-                style={styles.removeButtonContainer}
-                onPress={() => removeImage(index)}
-              >
-                <Text style={styles.removeButton}>×</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-          
-          {images.length < 10 && (
-            <TouchableOpacity 
-              style={styles.addImageButton} 
-              onPress={pickImage}
-            >
-              <Text style={styles.addImageButtonText}>+</Text>
-            </TouchableOpacity>
-          )}
+        <View style={styles.editorContainer}>
+          {renderContent()}
         </View>
+        
+        <TouchableOpacity 
+          style={[styles.addImageButton, images.length >= 10 && styles.addImageButtonDisabled]} 
+          onPress={pickImage}
+          disabled={images.length >= 10}
+        >
+          <Text style={styles.addImageButtonText}>사진 추가</Text>
+        </TouchableOpacity>
       </ScrollView>
+
       <Modal
         visible={menuModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={closeMenuModal}
+        onRequestClose={() => setMenuModalVisible(false)}
       >
-        <TouchableOpacity style={styles.modalOverlay} onPress={closeMenuModal}>
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          onPress={() => setMenuModalVisible(false)}
+        >
           <View style={styles.modalContent}>
-            <TouchableOpacity style={styles.modalItem} onPress={handleToggleBookmark}>
+            <TouchableOpacity 
+              style={styles.modalItem} 
+              onPress={handleToggleBookmark}
+            >
               <Text style={styles.modalItemText}>
                 {bookmark === 1 ? '즐겨찾기 해제' : '즐겨찾기'}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.modalItem} onPress={handleDelete}>
-              <Text style={[styles.modalItemText, { color: '#FF3B30' }]}>삭제하기</Text>
+            <TouchableOpacity 
+              style={styles.modalItem} 
+              onPress={handleDelete}
+            >
+              <Text style={[styles.modalItemText, { color: '#FF3B30' }]}>
+                삭제하기
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.modalCancel} onPress={closeMenuModal}>
+            <TouchableOpacity 
+              style={styles.modalCancel} 
+              onPress={() => setMenuModalVisible(false)}
+            >
               <Text style={styles.modalCancelText}>취소</Text>
             </TouchableOpacity>
           </View>
@@ -248,6 +302,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
+  buttonsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   moreButton: {
     width: 40,
     height: 40,
@@ -258,25 +317,6 @@ const styles = StyleSheet.create({
   },
   moreButtonText: {
     fontSize: 24,
-    color: '#FFFFFF',
-  },
-  buttonsContainer: {
-    justifyContent: 'space-between',
-    width: 90,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  deleteButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FF3B30',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  deleteButtonText: {
-    fontSize: 16,
     color: '#FFFFFF',
   },
   saveButton: {
@@ -296,13 +336,59 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     flex: 1,
+  },
+  editorContainer: {
+    flex: 1,
     padding: 16,
   },
   input: {
-    flex: 1,
     fontSize: 16,
     lineHeight: 24,
-    minHeight: 200,
+    padding: 0,
+    textAlignVertical: 'top',
+  },
+  imageWrapper: {
+    position: 'relative',
+    marginVertical: 8,
+    alignItems: 'center',
+  },
+  image: {
+    width: Dimensions.get('window').width - 32,
+    height: Dimensions.get('window').width - 32,
+    borderRadius: 8,
+  },
+  removeButtonContainer: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  addImageButton: {
+    marginTop: 16,
+    marginHorizontal: 16,
+    marginBottom: 32,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+  },
+  addImageButtonDisabled: {
+    backgroundColor: '#E1E1E1',
+  },
+  addImageButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   modalOverlay: {
     flex: 1,
@@ -325,54 +411,13 @@ const styles = StyleSheet.create({
   modalCancel: {
     marginTop: 10,
     paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E1E1E1',
   },
   modalCancelText: {
     fontSize: 18,
     textAlign: 'center',
     color: '#007AFF',
-  },
-  imageContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    paddingHorizontal: 30,
-    gap: 8,
-  },
-  imageWrapper: {
-      position: 'relative',
-      marginHorizontal: 5,
-      marginVertical: 5,
-  },
-  image: {  // 해상도에 따른 이미지 사이즈 조절 필요
-    width: (Dimensions.get('window').width - 60),
-    height: (Dimensions.get('window').width - 60),
-    borderRadius: 4,
-  },
-  removeButtonContainer: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 10,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-  },
-  removeButton: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  addImageButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 4,
-    backgroundColor: '#E1E1E1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addImageButtonText: {
-    fontSize: 24,
-    color: '#666',
   },
 });
 

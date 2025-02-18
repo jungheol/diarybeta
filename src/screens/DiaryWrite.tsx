@@ -15,14 +15,21 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { getDBConnection } from '../database/schema';
+import { DiaryImage } from '../types';
 
 const DiaryWrite: React.FC = () => {
   const router = useRouter();
   const { childId } = useLocalSearchParams<{ childId: string }>();
-  const [content, setContent] = useState<string>('');
-  const [images, setImages] = useState<string[]>([]);
+  const [text, setText] = useState<string>('');
+  const [images, setImages] = useState<DiaryImage[]>([]);
+  const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
   const currentDate = new Date();
-  const { width: screenWidth } = Dimensions.get('window');
+
+  const insertImageMarker = (imageId: string, selectionStart: number) => {
+    const before = text.slice(0, selectionStart);
+    const after = text.slice(selectionStart);
+    setText(`${before}\n[IMG:${imageId}]\n${after}`);
+  };
 
   const pickImage = async () => {
     if (images.length >= 10) {
@@ -37,31 +44,43 @@ const DiaryWrite: React.FC = () => {
     });
 
     if (!result.canceled && result.assets[0].uri) {
-      setImages([...images, result.assets[0].uri]);
+      const imageId = `${Date.now()}`;
+      const newImage: DiaryImage = {
+        id: imageId,
+        uri: result.assets[0].uri
+      };
+      
+      setImages([...images, newImage]);
+      insertImageMarker(imageId, selection.start);
     }
   };
 
-  const removeImage = (index: number) => {
-    setImages(images.filter((_, i) => i !== index));
+  const removeImage = (imageId: string) => {
+    // 텍스트에서 이미지 마커 제거
+    const newText = text.replace(new RegExp(`\\n?\\[IMG:${imageId}\\]\\n?`, 'g'), '\n');
+    setText(newText.replace(/\n{3,}/g, '\n\n')); // 연속된 줄바꿈 정리
+
+    // 이미지 배열에서 제거
+    setImages(images.filter(img => img.id !== imageId));
   };
 
   const handleSave = async () => {
-    if (!content.trim()) return;
+    if (!text.trim()) return;
 
     try {
       const db = await getDBConnection();
       await db.withTransactionAsync(async () => {
         const diaryResult = await db.runAsync(
           `INSERT INTO diary_entry (child_id, content) VALUES (?, ?)`,
-          [childId, content.trim()]
+          [childId, text.trim()]
         );
         
         const diaryId = diaryResult.lastInsertRowId;
         
-        for (const imageUri of images) {
+        for (const image of images) {
           await db.runAsync(
-            `INSERT INTO diary_picture (diary_entry_id, image_uri) VALUES (?, ?)`,
-            [diaryId, imageUri]
+            `INSERT INTO diary_picture (diary_entry_id, image_uri, image_id) VALUES (?, ?, ?)`,
+            [diaryId, image.uri, image.id]
           );
         }
       });
@@ -70,6 +89,45 @@ const DiaryWrite: React.FC = () => {
     } catch (error) {
       console.error('Failed to save diary entry:', error);
     }
+  };
+
+  const renderContent = () => {
+    const parts = text.split(/(\[IMG:[^\]]+\])/);
+    
+    return parts.map((part, index) => {
+      const match = part.match(/\[IMG:([^\]]+)\]/);
+      if (match) {
+        const imageId = match[1];
+        const image = images.find(img => img.id === imageId);
+        if (image) {
+          return (
+            <View key={index} style={styles.imageWrapper}>
+              <Image source={{ uri: image.uri }} style={styles.image} />
+              <TouchableOpacity 
+                style={styles.removeButtonContainer}
+                onPress={() => removeImage(image.id)}
+              >
+                <Text style={styles.removeButtonText}>×</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        }
+      }
+      return (
+        <TextInput
+          key={index}
+          style={styles.input}
+          multiline
+          value={part}
+          onChangeText={(newText) => {
+            const newParts = [...parts];
+            newParts[index] = newText;
+            setText(newParts.join(''));
+          }}
+          onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
+        />
+      );
+    });
   };
 
   return (
@@ -82,46 +140,26 @@ const DiaryWrite: React.FC = () => {
           {currentDate.toLocaleDateString()} {currentDate.toLocaleTimeString()}
         </Text>
         <TouchableOpacity
-          style={[styles.saveButton, !content.trim() && styles.saveButtonDisabled]}
+          style={[styles.saveButton, !text.trim() && styles.saveButtonDisabled]}
           onPress={handleSave}
-          disabled={!content.trim()}
+          disabled={!text.trim()}
         >
           <Text style={styles.saveButtonText}>✓</Text>
         </TouchableOpacity>
       </View>
       
       <ScrollView style={styles.contentContainer}>
-        <TextInput
-          style={styles.input}
-          multiline
-          placeholder="오늘의 이야기를 기록해보세요..."
-          value={content}
-          onChangeText={setContent}
-          textAlignVertical="top"
-        />
-        
-        <View style={styles.imageContainer}>
-          {images.map((uri, index) => (
-            <View key={index} style={styles.imageWrapper}>
-              <Image source={{ uri }} style={styles.image} />
-              <TouchableOpacity 
-                style={styles.removeButtonContainer}
-                onPress={() => removeImage(index)}
-              >
-                <Text style={styles.removeButton}>×</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-          
-          {images.length < 10 && (
-            <TouchableOpacity 
-              style={styles.addImageButton} 
-              onPress={pickImage}
-            >
-              <Text style={styles.addImageButtonText}>+</Text>
-            </TouchableOpacity>
-          )}
+        <View style={styles.editorContainer}>
+          {renderContent()}
         </View>
+        
+        <TouchableOpacity 
+          style={[styles.addImageButton, images.length >= 10 && styles.addImageButtonDisabled]} 
+          onPress={pickImage}
+          disabled={images.length >= 10}
+        >
+          <Text style={styles.addImageButtonText}>사진 추가</Text>
+        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -163,53 +201,57 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
+  editorContainer: {
+    flex: 1,
+    padding: 16,
+  },
   input: {
     fontSize: 16,
     lineHeight: 24,
-    minHeight: 200,
-  },
-  imageContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    paddingHorizontal: 30,
-    gap: 8,
+    padding: 0,
+    textAlignVertical: 'top',
   },
   imageWrapper: {
     position: 'relative',
-    marginHorizontal: 5,
-    marginVertical: 5,
+    marginHorizontal: 8,
+    alignItems: 'center',
   },
   image: {  // 해상도에 따른 이미지 사이즈 조절 필요
-    width: (Dimensions.get('window').width - 60),
-    height: (Dimensions.get('window').width - 60),
-    borderRadius: 4,
+    width: (Dimensions.get('window').width - 32),
+    height: (Dimensions.get('window').width - 32),
+    borderRadius: 8,
   },
   removeButtonContainer: {
     position: 'absolute',
-    top: -5,
-    right: -5,
+    top: 8,
+    right: 8,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 10,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-  },
-  removeButton: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  addImageButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 4,
-    backgroundColor: '#E1E1E1',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  removeButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  addImageButton: {
+    marginTop: 16,
+    marginHorizontal: 16,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+  },
+  addImageButtonDisabled: {
+    backgroundColor: '#E1E1E1',
+  },
   addImageButtonText: {
-    fontSize: 24,
+    fontSize: 16,
     color: '#666',
+    fontWeight: 'bold',
   },
 });
 
