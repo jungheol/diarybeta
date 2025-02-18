@@ -25,7 +25,10 @@ const MainScreen: React.FC = () => {
   const router = useRouter();
   const [childInfos, setChildInfos] = useState<Child[]>([]);
   const [diaryEntries, setDiaryEntries] = useState<GroupedDiaryEntry[]>([]);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const { selectedDate: paramSelectedDate } = useLocalSearchParams<{ selectedDate?: string }>();
+  const [selectedDate, setSelectedDate] = useState<Date>(
+    paramSelectedDate ? new Date(paramSelectedDate) : new Date()
+  );  
   const [activeChildId, setActiveChildId] = useState<number | null>(null);
   const [menuModalVisible, setMenuModalVisible] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
@@ -314,6 +317,7 @@ const MainScreen: React.FC = () => {
                 style={styles.modalItem}
                 onPress={() => {
                   setMenuModalVisible(false);
+                  router.push('/monthly');
                 }}
               >
                 <Text style={styles.modalItemText}>월별보기</Text>
