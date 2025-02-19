@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   TextInput,
@@ -11,13 +11,16 @@ import {
   Alert,
   Image,
   Dimensions,
-  NativeSyntheticEvent,
-  TextInputSelectionChangeEventData,
+  Keyboard,
+  KeyboardEvent,
+  LayoutChangeEvent,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { getDBConnection } from '../database/schema';
 import { DiaryImage } from '../types';
+
+const KEYBOARD_OFFSET = 20; // 키보드 위 커서 여유 공간
 
 const DiaryWrite: React.FC = () => {
   const router = useRouter();
@@ -25,42 +28,82 @@ const DiaryWrite: React.FC = () => {
   const [text, setText] = useState<string>('');
   const [images, setImages] = useState<DiaryImage[]>([]);
   const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
-  const inputRefs = useRef<TextInput[]>([]);
-  const lastFocusedInput = useRef<number>(0);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const currentDate = new Date();
+  
   const scrollViewRef = useRef<ScrollView>(null);
-  const currentInputRef = useRef<TextInput>(null);
+  const textInputRef = useRef<TextInput>(null);
+  const lastCursorPositionRef = useRef<number>(0);
+  const textInputLayoutRef = useRef<{ y: number; height: number }>({ y: 0, height: 0 });
+  
+  useEffect(() => {
+    const keyboardWillShow = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (event: KeyboardEvent) => {
+        setKeyboardHeight(event.endCoordinates.height);
+      }
+    );
 
-  const scrollToCursor = (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
-    if (currentInputRef.current && scrollViewRef.current) {
-      currentInputRef.current.measure((x, y, width, height, pageX, pageY) => {
-        const cursorY = pageY + (event.nativeEvent.selection.start / text.length) * height;
-        scrollViewRef.current?.scrollTo({
-          y: cursorY - Dimensions.get('window').height / 3,
-          animated: true,
-        });
+    const keyboardWillHide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      keyboardWillShow.remove();
+      keyboardWillHide.remove();
+    };
+  }, []);
+
+  const onTextInputLayout = (event: LayoutChangeEvent) => {
+    const { y, height } = event.nativeEvent.layout;
+    textInputLayoutRef.current = { y, height };
+  };
+
+  const adjustScroll = (cursorPosition: number) => {
+    if (!scrollViewRef.current || !textInputRef.current) return;
+
+    const lineHeight = 24; // TextInput의 lineHeight
+    const screenHeight = Dimensions.get('window').height;
+    const keyboardTop = screenHeight - keyboardHeight;
+    
+    // 현재 커서의 대략적인 Y 위치 계산
+    const totalLines = text.slice(0, cursorPosition).split('\n').length;
+    const estimatedCursorY = textInputLayoutRef.current.y + (totalLines * lineHeight);
+    
+    // 키보드 위에 커서가 보이도록 스크롤 조정
+    if (estimatedCursorY > keyboardTop - KEYBOARD_OFFSET) {
+      scrollViewRef.current.scrollTo({
+        y: estimatedCursorY - (keyboardTop - KEYBOARD_OFFSET - lineHeight),
+        animated: true
       });
     }
   };
 
-  const insertImageMarker = (imageId: string, selectionStart: number) => {
-    const before = text.slice(0, selectionStart);
-    const after = text.slice(selectionStart);
-    setText(`${before}\n[IMG:${imageId}]\n${after}`);
+  const handleSelectionChange = (start: number, end: number) => {
+    setSelection({ start, end });
+    lastCursorPositionRef.current = start;
+    adjustScroll(start);
+  };
 
-    const newPosition = before.length + `\n[IMG:${imageId}]\n`.length;
+  const insertImageMarker = (imageId: string) => {
+    const cursorPosition = lastCursorPositionRef.current;
+    const before = text.slice(0, cursorPosition);
+    const after = text.slice(cursorPosition);
+    const imageMarker = `\n[IMG:${imageId}]\n`;
+    const newText = `${before}${imageMarker}${after}`;
+    setText(newText);
+
+    // 이미지 마커 삽입 후 커서 위치 조정
+    const newPosition = before.length + imageMarker.length;
     setSelection({ start: newPosition, end: newPosition });
-    
-    // 약간의 지연 후 스크롤 조정
+    lastCursorPositionRef.current = newPosition;
+
+    // 새로운 커서 위치로 스크롤 조정
     setTimeout(() => {
-      if (currentInputRef.current && scrollViewRef.current) {
-        currentInputRef.current.measure((x, y, width, height, pageX, pageY) => {
-          scrollViewRef.current?.scrollTo({
-            y: pageY + height,
-            animated: true,
-          });
-        });
-      }
+      adjustScroll(newPosition);
     }, 100);
   };
 
@@ -84,23 +127,8 @@ const DiaryWrite: React.FC = () => {
       };
       
       setImages([...images, newImage]);
-      setTimeout(() => {
-        const currentInput = inputRefs.current[lastFocusedInput.current];
-        if (currentInput) {
-          currentInput.focus();
-          insertImageMarker(imageId, selection.start);
-        }
-      }, 100);
+      insertImageMarker(imageId);
     }
-  };
-
-  const removeImage = (imageId: string) => {
-    // 텍스트에서 이미지 마커 제거
-    const newText = text.replace(new RegExp(`\\n?\\[IMG:${imageId}\\]\\n?`, 'g'), '\n');
-    setText(newText.replace(/\n{3,}/g, '\n\n')); // 연속된 줄바꿈 정리
-
-    // 이미지 배열에서 제거
-    setImages(images.filter(img => img.id !== imageId));
   };
 
   const handleSave = async () => {
@@ -130,17 +158,23 @@ const DiaryWrite: React.FC = () => {
     }
   };
 
+  const removeImage = (imageId: string) => {
+    const newText = text.replace(new RegExp(`\\n?\\[IMG:${imageId}\\]\\n?`, 'g'), '\n')
+                      .replace(/\n{3,}/g, '\n\n');
+    setText(newText);
+    setImages(images.filter(img => img.id !== imageId));
+  };
+
   const renderContent = () => {
     const parts = text.split(/(\[IMG:[^\]]+\])/);
-    
-    return parts.map((part, index) => {
+    const elements = parts.map((part, index) => {
       const match = part.match(/\[IMG:([^\]]+)\]/);
       if (match) {
         const imageId = match[1];
         const image = images.find(img => img.id === imageId);
         if (image) {
           return (
-            <View key={index} style={styles.imageWrapper}>
+            <View key={`img-${index}`} style={styles.imageWrapper}>
               <Image source={{ uri: image.uri }} style={styles.image} />
               <TouchableOpacity 
                 style={styles.removeButtonContainer}
@@ -152,33 +186,36 @@ const DiaryWrite: React.FC = () => {
           );
         }
       }
-      return (
+      return null;
+    });
+
+    return (
+      <View style={styles.editorContainer}>
         <TextInput
-          key={index}
-          ref={index === parts.length - 1 ? currentInputRef : null}
+          ref={textInputRef}
           style={styles.input}
           multiline
-          value={part}
-          onChangeText={(newText) => {
-            const newParts = [...parts];
-            newParts[index] = newText;
-            setText(newParts.join(''));
-          }}
-          onSelectionChange={(event) => {
-            setSelection(event.nativeEvent.selection);
-            scrollToCursor(event);
-          }}
-          selection={index === parts.length - 1 ? selection : undefined}
+          value={text}
+          onChangeText={setText}
+          onSelectionChange={(event) => 
+            handleSelectionChange(
+              event.nativeEvent.selection.start,
+              event.nativeEvent.selection.end
+            )
+          }
+          onLayout={onTextInputLayout}
+          selection={selection}
         />
-      );
-    });
+        {elements}
+      </View>
+    );
   };
 
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -202,21 +239,22 @@ const DiaryWrite: React.FC = () => {
         ref={scrollViewRef}
         style={styles.contentContainer}
         keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={16}
       >
-        <View style={styles.editorContainer}>
-          {renderContent()}
-        </View>
+        {renderContent()}
       </ScrollView>
-        
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity 
-          style={[styles.addImageButton, images.length >= 10 && styles.addImageButtonDisabled]} 
-          onPress={pickImage}
-          disabled={images.length >= 10}
-        >
-          <Text style={styles.addImageButtonText}>사진 추가</Text>
-        </TouchableOpacity>
-      </View>
+
+      {keyboardHeight > 0 && (
+        <View style={[styles.bottomBar, { bottom: keyboardHeight }]}>
+          <TouchableOpacity 
+            style={[styles.addImageButton, images.length >= 10 && styles.addImageButtonDisabled]} 
+            onPress={pickImage}
+            disabled={images.length >= 10}
+          >
+            <Text style={styles.addImageButtonText}>사진 추가</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 };
@@ -225,7 +263,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: 20,
   },
   header: {
     flexDirection: 'row',
@@ -270,22 +307,22 @@ const styles = StyleSheet.create({
   },
   editorContainer: {
     flex: 1,
-    padding: 16,
+    minHeight: Dimensions.get('window').height - 180,
   },
   input: {
+    flex: 1,
     fontSize: 16,
     lineHeight: 24,
     padding: 0,
     textAlignVertical: 'top',
   },
   imageWrapper: {
-    position: 'relative',
-    marginHorizontal: 8,
+    marginVertical: 8,
     alignItems: 'center',
   },
-  image: {  // 해상도에 따른 이미지 사이즈 조절 필요
-    width: (Dimensions.get('window').width - 32),
-    height: (Dimensions.get('window').width - 32),
+  image: {
+    width: Dimensions.get('window').width - 32,
+    height: (Dimensions.get('window').width - 32) * 0.75,
     borderRadius: 8,
   },
   removeButtonContainer: {
@@ -304,15 +341,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  buttonContainer: {
-    padding: 16,
+  bottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     borderTopWidth: 1,
     borderTopColor: '#E1E1E1',
-    backgroundColor: '#FFF',
+    backgroundColor: '#f8f8f8',
+    padding: 8,
   },
   addImageButton: {
-    marginTop: 16,
-    marginHorizontal: 16,
     padding: 12,
     borderRadius: 8,
     backgroundColor: '#007AFF',
