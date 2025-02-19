@@ -11,6 +11,8 @@ import {
   Alert,
   Image,
   Dimensions,
+  NativeSyntheticEvent,
+  TextInputSelectionChangeEventData,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -26,11 +28,40 @@ const DiaryWrite: React.FC = () => {
   const inputRefs = useRef<TextInput[]>([]);
   const lastFocusedInput = useRef<number>(0);
   const currentDate = new Date();
+  const scrollViewRef = useRef<ScrollView>(null);
+  const currentInputRef = useRef<TextInput>(null);
+
+  const scrollToCursor = (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+    if (currentInputRef.current && scrollViewRef.current) {
+      currentInputRef.current.measure((x, y, width, height, pageX, pageY) => {
+        const cursorY = pageY + (event.nativeEvent.selection.start / text.length) * height;
+        scrollViewRef.current?.scrollTo({
+          y: cursorY - Dimensions.get('window').height / 3,
+          animated: true,
+        });
+      });
+    }
+  };
 
   const insertImageMarker = (imageId: string, selectionStart: number) => {
     const before = text.slice(0, selectionStart);
     const after = text.slice(selectionStart);
     setText(`${before}\n[IMG:${imageId}]\n${after}`);
+
+    const newPosition = before.length + `\n[IMG:${imageId}]\n`.length;
+    setSelection({ start: newPosition, end: newPosition });
+    
+    // 약간의 지연 후 스크롤 조정
+    setTimeout(() => {
+      if (currentInputRef.current && scrollViewRef.current) {
+        currentInputRef.current.measure((x, y, width, height, pageX, pageY) => {
+          scrollViewRef.current?.scrollTo({
+            y: pageY + height,
+            animated: true,
+          });
+        });
+      }
+    }, 100);
   };
 
   const pickImage = async () => {
@@ -124,11 +155,7 @@ const DiaryWrite: React.FC = () => {
       return (
         <TextInput
           key={index}
-          ref={(ref) => {
-            if (ref) {
-              inputRefs.current[index] = ref;
-            }
-          }}
+          ref={index === parts.length - 1 ? currentInputRef : null}
           style={styles.input}
           multiline
           value={part}
@@ -139,11 +166,9 @@ const DiaryWrite: React.FC = () => {
           }}
           onSelectionChange={(event) => {
             setSelection(event.nativeEvent.selection);
-            lastFocusedInput.current = index;
+            scrollToCursor(event);
           }}
-          onFocus={() => {
-            lastFocusedInput.current = index;
-          }}
+          selection={index === parts.length - 1 ? selection : undefined}
         />
       );
     });
@@ -173,7 +198,11 @@ const DiaryWrite: React.FC = () => {
         </TouchableOpacity>
       </View>
       
-      <ScrollView style={styles.contentContainer}>
+      <ScrollView 
+        ref={scrollViewRef}
+        style={styles.contentContainer}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.editorContainer}>
           {renderContent()}
         </View>
