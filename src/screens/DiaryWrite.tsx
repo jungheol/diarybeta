@@ -26,6 +26,8 @@ import { DiaryImage } from '../types';
 const KEYBOARD_MARGIN = 24; // 키보드 위 여유 공간
 const BUTTON_HEIGHT = 60; // 사진 추가 버튼의 높이
 const LINE_HEIGHT = 24; // TextInput의 라인 높이
+const IMAGE_ASPECT_RATIO = 1; // 이미지의 가로:세로 비율이 1:1인 경우
+const IMAGE_MARGIN = 16; // 이미지 위아래 마진 값
 
 const DiaryWrite: React.FC = () => {
   const router = useRouter();
@@ -41,6 +43,7 @@ const DiaryWrite: React.FC = () => {
   const lastCursorPositionRef = useRef<number>(0);
   const textInputLayoutRef = useRef<{ y: number; height: number }>({ y: 0, height: 0 });
   const [scrollOffset, setScrollOffset] = useState(0);
+  const textInputPositionsRef = useRef<{ [key: number]: number }>({});
 
   
   useEffect(() => {
@@ -77,35 +80,69 @@ const DiaryWrite: React.FC = () => {
 
   const measureCursorPosition = (cursorOffset: number) => {
     if (!textInputRef.current) return 0;
-
-    const textContent = text.slice(0, cursorOffset);
-    const lines = textContent.split('\n');
-    const lineCount = lines.length;
+  
+    const parts = text.split(/(\[IMG:[^\]]+\])/);
+    let totalHeight = 0;
+    let currentLength = 0;
+    let currentPartIndex = -1;
     
-    // 현재 커서의 Y 위치 계산
-    return textInputLayoutRef.current.y + (lineCount * LINE_HEIGHT);
+    // 현재 커서가 위치한 부분 찾기
+    for (let i = 0; i < parts.length; i++) {
+      if (currentLength + parts[i].length >= cursorOffset) {
+        currentPartIndex = i;
+        break;
+      }
+      currentLength += parts[i].length;
+    }
+  
+    // 이전 모든 부분의 높이 계산
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const match = part.match(/\[IMG:([^\]]+)\]/);
+      
+      if (match) {
+        const imageWidth = Dimensions.get('window').width - 32;
+        const imageHeight = imageWidth * IMAGE_ASPECT_RATIO;
+        totalHeight += imageHeight + IMAGE_MARGIN * 2;
+      } else {
+        // 텍스트 부분의 경우 저장된 위치 값 사용
+        const textPosition = textInputPositionsRef.current[i] || 0;
+        if (i === currentPartIndex) {
+          const textBeforeCursor = part.slice(0, cursorOffset - currentLength);
+          const linesBeforeCursor = textBeforeCursor.split('\n');
+          totalHeight += textPosition + (linesBeforeCursor.length * LINE_HEIGHT);
+        } else {
+          const lines = part.split('\n');
+          totalHeight += textPosition + (lines.length * LINE_HEIGHT);
+        }
+      }
+    }
+  
+    console.log('Part positions:', textInputPositionsRef.current);
+    console.log('Calculated total height:', totalHeight);
+    return totalHeight;
   };
-
+  
   const adjustScroll = (cursorOffset: number) => {
     if (!scrollViewRef.current || !textInputRef.current) return;
-
+  
     const visibleHeight = calculateVisibleHeight();
     const cursorY = measureCursorPosition(cursorOffset);
     
-    // 화면에 보이는 영역의 상단과 하단 Y 좌표
     const visibleTop = scrollOffset;
     const visibleBottom = visibleTop + visibleHeight - KEYBOARD_MARGIN - BUTTON_HEIGHT;
-
     const scrollTriggerPoint = visibleBottom - (LINE_HEIGHT * 2);
-
+  
+    console.log("cursorY    " + cursorY);
+    console.log("scroll     " + scrollTriggerPoint)
     if (cursorY > scrollTriggerPoint) {
-      // 커서가 화면 하단을 벗어났을 때
+      // 스크롤 위치 계산 시 여유 공간 추가
+      const bottomOffset = KEYBOARD_MARGIN + (LINE_HEIGHT * 2) + BUTTON_HEIGHT;
       scrollViewRef.current.scrollTo({
-        y: cursorY - visibleHeight + KEYBOARD_MARGIN + (LINE_HEIGHT * 2) + BUTTON_HEIGHT,
+        y: cursorY - visibleHeight + bottomOffset,
         animated: true
       });
     } else if (cursorY < visibleTop + KEYBOARD_MARGIN) {
-      // 커서가 화면 상단을 벗어났을 때
       scrollViewRef.current.scrollTo({
         y: Math.max(0, cursorY - KEYBOARD_MARGIN - LINE_HEIGHT),
         animated: true
@@ -260,6 +297,16 @@ const DiaryWrite: React.FC = () => {
               }}
               onSelectionChange={handleSelectionChange}
               onContentSizeChange={handleContentSizeChange}
+              onLayout={(e) => {
+                // 각 TextInput의 절대 위치 저장
+                textInputPositionsRef.current[index] = e.nativeEvent.layout.y;
+                if (index === 0) {
+                  textInputLayoutRef.current = {
+                    y: e.nativeEvent.layout.y,
+                    height: e.nativeEvent.layout.height
+                  };
+                }
+              }}
               selection={index === 0 ? selection : undefined}
             />
           );
