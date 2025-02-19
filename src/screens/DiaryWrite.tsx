@@ -98,8 +98,6 @@ const DiaryWrite: React.FC = () => {
 
     const scrollTriggerPoint = visibleBottom - (LINE_HEIGHT * 2);
 
-    console.log("cursorY.     " + cursorY);
-    console.log("scrollTriggerPoint       " + scrollTriggerPoint );
     if (cursorY > scrollTriggerPoint) {
       // 커서가 화면 하단을 벗어났을 때
       scrollViewRef.current.scrollTo({
@@ -214,48 +212,59 @@ const DiaryWrite: React.FC = () => {
 
   const renderContent = () => {
     const parts = text.split(/(\[IMG:[^\]]+\])/);
-    const elements = parts.map((part, index) => {
-      const match = part.match(/\[IMG:([^\]]+)\]/);
-      if (match) {
-        const imageId = match[1];
-        const image = images.find(img => img.id === imageId);
-        if (image) {
-          return (
-            <View key={`img-${index}`} style={styles.imageWrapper}>
-              <Image source={{ uri: image.uri }} style={styles.image} />
-              <TouchableOpacity 
-                style={styles.removeButtonContainer}
-                onPress={() => removeImage(image.id)}
-              >
-                <Text style={styles.removeButtonText}>×</Text>
-              </TouchableOpacity>
-            </View>
-          );
-        }
-      }
-      return null;
-    });
 
     return (
-      <View style={styles.editorContainer}>
-        <TextInput
-          ref={textInputRef}
-          style={styles.input}
-          multiline
-          value={text}
-          onChangeText={setText}
-          onSelectionChange={handleSelectionChange}
-          onContentSizeChange={handleContentSizeChange}
-          onLayout={(e) => {
-            textInputLayoutRef.current = {
-              y: e.nativeEvent.layout.y,
-              height: e.nativeEvent.layout.height
-            };
-          }}
-          selection={selection}
-        />
-        {elements}
-      </View>
+      <TouchableOpacity 
+        style={styles.editorContainer}
+        activeOpacity={1}
+        onPress={() => {
+          textInputRef.current?.focus();
+        }}
+      >
+        {parts.map((part, index) => {
+          const match = part.match(/\[IMG:([^\]]+)\]/);
+          if (match) {
+            const imageId = match[1];
+            const image = images.find(img => img.id === imageId);
+            if (image) {
+              return (
+                <View key={`img-${index}`} style={styles.imageWrapper}>
+                  <Image source={{ uri: image.uri }} style={styles.image} />
+                  <TouchableOpacity 
+                    style={styles.removeButtonContainer}
+                    onPress={() => removeImage(image.id)}
+                  >
+                    <Text style={styles.removeButtonText}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            }
+            return null;
+          }
+  
+          return (
+            <TextInput
+              key={`text-${index}`}
+              ref={index === 0 ? textInputRef : null}
+              style={[
+                styles.input,
+                // 첫 번째 TextInput에만 flex: 1 적용
+                index === 0 && styles.firstInput
+              ]}
+              multiline
+              value={part}
+              onChangeText={(newText) => {
+                const newParts = [...parts];
+                newParts[index] = newText;
+                setText(newParts.join(''));
+              }}
+              onSelectionChange={handleSelectionChange}
+              onContentSizeChange={handleContentSizeChange}
+              selection={index === 0 ? selection : undefined}
+            />
+          );
+        })}
+      </TouchableOpacity>
     );
   };
 
@@ -362,12 +371,16 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     paddingBottom: BUTTON_HEIGHT + 16,
+    minHeight: Dimensions.get('window').height - 180, // 최소 높이 설정
   },
   input: {
     fontSize: 16,
     lineHeight: LINE_HEIGHT,
     padding: 0,
     textAlignVertical: 'top',
+  },
+  firstInput: {
+    flex: 1, // 첫 번째 TextInput에만 flex: 1 적용
   },
   imageWrapper: {
     marginVertical: 8,
