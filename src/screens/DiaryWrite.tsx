@@ -23,7 +23,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { getDBConnection } from '../database/schema';
 import { DiaryImage } from '../types';
 
-const KEYBOARD_MARGIN = 20; // 키보드 위 여유 공간
+const KEYBOARD_MARGIN = 24; // 키보드 위 여유 공간
 const BUTTON_HEIGHT = 60; // 사진 추가 버튼의 높이
 const LINE_HEIGHT = 24; // TextInput의 라인 높이
 
@@ -96,12 +96,14 @@ const DiaryWrite: React.FC = () => {
     const visibleTop = scrollOffset;
     const visibleBottom = visibleTop + visibleHeight - KEYBOARD_MARGIN - BUTTON_HEIGHT;
 
-    const scrollTriggerPoint = visibleBottom - LINE_HEIGHT;
+    const scrollTriggerPoint = visibleBottom - (LINE_HEIGHT * 2);
 
+    console.log("cursorY.     " + cursorY);
+    console.log("scrollTriggerPoint       " + scrollTriggerPoint );
     if (cursorY > scrollTriggerPoint) {
       // 커서가 화면 하단을 벗어났을 때
       scrollViewRef.current.scrollTo({
-        y: cursorY - visibleHeight + KEYBOARD_MARGIN + LINE_HEIGHT + BUTTON_HEIGHT,
+        y: cursorY - visibleHeight + KEYBOARD_MARGIN + (LINE_HEIGHT * 2) + BUTTON_HEIGHT,
         animated: true
       });
     } else if (cursorY < visibleTop + KEYBOARD_MARGIN) {
@@ -373,7 +375,7 @@ const styles = StyleSheet.create({
   },
   image: {
     width: Dimensions.get('window').width - 32,
-    height: (Dimensions.get('window').width - 32) * 0.75,
+    height: Dimensions.get('window').width - 32,
     borderRadius: 8,
   },
   removeButtonContainer: {

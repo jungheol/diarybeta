@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   TextInput,
@@ -12,11 +12,20 @@ import {
   Image,
   Dimensions,
   Modal,
+  Keyboard,
+  KeyboardEvent,
+  NativeSyntheticEvent,
+  TextInputSelectionChangeEventData,
+  TextInputContentSizeChangeEventData,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { getDBConnection } from '../database/schema';
 import { DiaryImage } from '../types';
+
+const KEYBOARD_MARGIN = 24;
+const BUTTON_HEIGHT = 60;
+const LINE_HEIGHT = 24;
 
 const DiaryEdit: React.FC = () => {
   const router = useRouter();
@@ -27,9 +36,35 @@ const DiaryEdit: React.FC = () => {
   const [createdAt, setCreatedAt] = useState<string>('');
   const [bookmark, setBookmark] = useState<number>(0);
   const [menuModalVisible, setMenuModalVisible] = useState<boolean>(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  const scrollViewRef = useRef<ScrollView>(null);
+  const textInputRef = useRef<TextInput>(null);
+  const lastCursorPositionRef = useRef<number>(0);
+  const textInputLayoutRef = useRef<{ y: number; height: number }>({ y: 0, height: 0 });
 
   useEffect(() => {
     loadDiaryEntry();
+
+    const keyboardWillShow = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (event: KeyboardEvent) => {
+        setKeyboardHeight(event.endCoordinates.height);
+      }
+    );
+
+    const keyboardWillHide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      keyboardWillShow.remove();
+      keyboardWillHide.remove();
+    };
   }, [diaryId]);
 
   const loadDiaryEntry = async () => {
@@ -42,8 +77,8 @@ const DiaryEdit: React.FC = () => {
 
       const imageResults = await db.getAllAsync<{ image_uri: string; image_id: string }>(
         `SELECT image_uri, image_id FROM diary_picture 
-         WHERE diary_entry_id = ? 
-         ORDER BY created_at ASC`,
+          WHERE diary_entry_id = ? 
+          ORDER BY created_at ASC`,
         [diaryId]
       );
 
@@ -62,10 +97,81 @@ const DiaryEdit: React.FC = () => {
     }
   };
 
-  const insertImageMarker = (imageId: string, selectionStart: number) => {
-    const before = text.slice(0, selectionStart);
-    const after = text.slice(selectionStart);
-    setText(`${before}\n[IMG:${imageId}]\n${after}`);
+  const calculateVisibleHeight = () => {
+    const screenHeight = Dimensions.get('window').height;
+    const totalBottomHeight = keyboardHeight + (keyboardHeight > 0 ? BUTTON_HEIGHT : 0);
+    return screenHeight - totalBottomHeight;
+  };
+
+  const measureCursorPosition = (cursorOffset: number) => {
+    if (!textInputRef.current) return 0;
+
+    const textContent = text.slice(0, cursorOffset);
+    const lines = textContent.split('\n');
+    const lineCount = lines.length;
+    
+    return textInputLayoutRef.current.y + (lineCount * LINE_HEIGHT);
+  };
+
+  const adjustScroll = (cursorOffset: number) => {
+    if (!scrollViewRef.current || !textInputRef.current) return;
+
+    const visibleHeight = calculateVisibleHeight();
+    const cursorY = measureCursorPosition(cursorOffset);
+    
+    const visibleTop = scrollOffset;
+    const visibleBottom = visibleTop + visibleHeight - KEYBOARD_MARGIN - BUTTON_HEIGHT;
+
+    // 커서가 키보드 위 24px에 도달하면 스크롤 시작
+    const scrollTriggerPoint = visibleBottom - (LINE_HEIGHT * 2);
+
+    if (cursorY > scrollTriggerPoint) {
+      scrollViewRef.current.scrollTo({
+        y: cursorY - visibleHeight + KEYBOARD_MARGIN + (LINE_HEIGHT * 2) + BUTTON_HEIGHT,
+        animated: true
+      });
+    } else if (cursorY < visibleTop + KEYBOARD_MARGIN) {
+      scrollViewRef.current.scrollTo({
+        y: Math.max(0, cursorY - KEYBOARD_MARGIN - LINE_HEIGHT),
+        animated: true
+      });
+    }
+  };
+
+  const handleSelectionChange = (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+    const { start, end } = event.nativeEvent.selection;
+    setSelection({ start, end });
+    lastCursorPositionRef.current = start;
+    
+    requestAnimationFrame(() => {
+      adjustScroll(start);
+    });
+  };
+
+  const handleContentSizeChange = (event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
+    const { height } = event.nativeEvent.contentSize;
+    textInputLayoutRef.current.height = height;
+  };
+
+  const handleScroll = (event: NativeSyntheticEvent<any>) => {
+    setScrollOffset(event.nativeEvent.contentOffset.y);
+  };
+
+  const insertImageMarker = (imageId: string) => {
+    const cursorPosition = lastCursorPositionRef.current;
+    const before = text.slice(0, cursorPosition);
+    const after = text.slice(cursorPosition);
+    const imageMarker = `\n[IMG:${imageId}]\n`;
+    const newText = `${before}${imageMarker}${after}`;
+    setText(newText);
+
+    const newPosition = before.length + imageMarker.length;
+    setSelection({ start: newPosition, end: newPosition });
+    lastCursorPositionRef.current = newPosition;
+
+    setTimeout(() => {
+      adjustScroll(newPosition);
+    }, 100);
   };
 
   const pickImage = async () => {
@@ -88,7 +194,7 @@ const DiaryEdit: React.FC = () => {
       };
       
       setImages([...images, newImage]);
-      insertImageMarker(imageId, selection.start);
+      insertImageMarker(imageId);
     }
   };
 
@@ -176,7 +282,7 @@ const DiaryEdit: React.FC = () => {
         const image = images.find(img => img.id === imageId);
         if (image) {
           return (
-            <View key={index} style={styles.imageWrapper}>
+            <View key={`img-${index}`} style={styles.imageWrapper}>
               <Image source={{ uri: image.uri }} style={styles.image} />
               <TouchableOpacity 
                 style={styles.removeButtonContainer}
@@ -187,10 +293,12 @@ const DiaryEdit: React.FC = () => {
             </View>
           );
         }
+        return null;
       }
       return (
         <TextInput
-          key={index}
+          key={`text-${index}`}
+          ref={index === 0 ? textInputRef : null}
           style={styles.input}
           multiline
           value={part}
@@ -199,7 +307,9 @@ const DiaryEdit: React.FC = () => {
             newParts[index] = newText;
             setText(newParts.join(''));
           }}
-          onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
+          onSelectionChange={handleSelectionChange}
+          onContentSizeChange={handleContentSizeChange}
+          selection={index === 0 ? selection : undefined}
         />
       );
     });
@@ -209,6 +319,7 @@ const DiaryEdit: React.FC = () => {
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
+      keyboardVerticalOffset={0}
     >
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -236,19 +347,30 @@ const DiaryEdit: React.FC = () => {
         </View>
       </View>
 
-      <ScrollView style={styles.contentContainer}>
+      <ScrollView 
+        ref={scrollViewRef}
+        style={styles.contentContainer}
+        keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={16}
+        onScroll={handleScroll}
+        contentContainerStyle={styles.scrollContent}
+      >
         <View style={styles.editorContainer}>
           {renderContent()}
         </View>
-        
-        <TouchableOpacity 
-          style={[styles.addImageButton, images.length >= 10 && styles.addImageButtonDisabled]} 
-          onPress={pickImage}
-          disabled={images.length >= 10}
-        >
-          <Text style={styles.addImageButtonText}>사진 추가</Text>
-        </TouchableOpacity>
       </ScrollView>
+
+      {keyboardHeight > 0 && (
+        <View style={[styles.bottomBar, { bottom: keyboardHeight }]}>
+          <TouchableOpacity 
+            style={[styles.addImageButton, images.length >= 10 && styles.addImageButtonDisabled]} 
+            onPress={pickImage}
+            disabled={images.length >= 10}
+          >
+            <Text style={styles.addImageButtonText}>사진 추가</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <Modal
         visible={menuModalVisible}
@@ -352,20 +474,35 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     flex: 1,
-    padding: 16,
   },
   editorContainer: {
     flex: 1,
     padding: 16,
+    paddingBottom: BUTTON_HEIGHT + 16,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    padding: 16,
+    paddingBottom: BUTTON_HEIGHT,
+  },
+  bottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: BUTTON_HEIGHT,
+    borderTopWidth: 1,
+    borderTopColor: '#E1E1E1',
+    backgroundColor: '#f8f8f8',
+    padding: 8,
+    justifyContent: 'center',
   },
   input: {
     fontSize: 16,
-    lineHeight: 24,
+    lineHeight: LINE_HEIGHT,
     padding: 0,
     textAlignVertical: 'top',
   },
   imageWrapper: {
-    position: 'relative',
     marginVertical: 8,
     alignItems: 'center',
   },
@@ -391,9 +528,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   addImageButton: {
-    marginTop: 16,
-    marginHorizontal: 16,
-    marginBottom: 32,
     padding: 12,
     borderRadius: 8,
     backgroundColor: '#007AFF',
