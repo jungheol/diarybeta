@@ -14,13 +14,18 @@ import {
   Keyboard,
   KeyboardEvent,
   LayoutChangeEvent,
+  NativeSyntheticEvent,
+  TextInputSelectionChangeEventData,
+  TextInputContentSizeChangeEventData,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { getDBConnection } from '../database/schema';
 import { DiaryImage } from '../types';
 
-const KEYBOARD_OFFSET = 20; // 키보드 위 커서 여유 공간
+const KEYBOARD_MARGIN = 20; // 키보드 위 여유 공간
+const BUTTON_HEIGHT = 60; // 사진 추가 버튼의 높이
+const LINE_HEIGHT = 24; // TextInput의 라인 높이
 
 const DiaryWrite: React.FC = () => {
   const router = useRouter();
@@ -35,6 +40,8 @@ const DiaryWrite: React.FC = () => {
   const textInputRef = useRef<TextInput>(null);
   const lastCursorPositionRef = useRef<number>(0);
   const textInputLayoutRef = useRef<{ y: number; height: number }>({ y: 0, height: 0 });
+  const [scrollOffset, setScrollOffset] = useState(0);
+
   
   useEffect(() => {
     const keyboardWillShow = Keyboard.addListener(
@@ -62,30 +69,68 @@ const DiaryWrite: React.FC = () => {
     textInputLayoutRef.current = { y, height };
   };
 
-  const adjustScroll = (cursorPosition: number) => {
+  const calculateVisibleHeight = () => {
+    const screenHeight = Dimensions.get('window').height;
+    const totalBottomHeight = keyboardHeight + (keyboardHeight > 0 ? BUTTON_HEIGHT : 0);
+    return screenHeight - totalBottomHeight;
+  };
+
+  const measureCursorPosition = (cursorOffset: number) => {
+    if (!textInputRef.current) return 0;
+
+    const textContent = text.slice(0, cursorOffset);
+    const lines = textContent.split('\n');
+    const lineCount = lines.length;
+    
+    // 현재 커서의 Y 위치 계산
+    return textInputLayoutRef.current.y + (lineCount * LINE_HEIGHT);
+  };
+
+  const adjustScroll = (cursorOffset: number) => {
     if (!scrollViewRef.current || !textInputRef.current) return;
 
-    const lineHeight = 24; // TextInput의 lineHeight
-    const screenHeight = Dimensions.get('window').height;
-    const keyboardTop = screenHeight - keyboardHeight;
+    const visibleHeight = calculateVisibleHeight();
+    const cursorY = measureCursorPosition(cursorOffset);
     
-    // 현재 커서의 대략적인 Y 위치 계산
-    const totalLines = text.slice(0, cursorPosition).split('\n').length;
-    const estimatedCursorY = textInputLayoutRef.current.y + (totalLines * lineHeight);
-    
-    // 키보드 위에 커서가 보이도록 스크롤 조정
-    if (estimatedCursorY > keyboardTop - KEYBOARD_OFFSET) {
+    // 화면에 보이는 영역의 상단과 하단 Y 좌표
+    const visibleTop = scrollOffset;
+    const visibleBottom = visibleTop + visibleHeight - KEYBOARD_MARGIN - BUTTON_HEIGHT;
+
+    const scrollTriggerPoint = visibleBottom - LINE_HEIGHT;
+
+    if (cursorY > scrollTriggerPoint) {
+      // 커서가 화면 하단을 벗어났을 때
       scrollViewRef.current.scrollTo({
-        y: estimatedCursorY - (keyboardTop - KEYBOARD_OFFSET - lineHeight),
+        y: cursorY - visibleHeight + KEYBOARD_MARGIN + LINE_HEIGHT + BUTTON_HEIGHT,
+        animated: true
+      });
+    } else if (cursorY < visibleTop + KEYBOARD_MARGIN) {
+      // 커서가 화면 상단을 벗어났을 때
+      scrollViewRef.current.scrollTo({
+        y: Math.max(0, cursorY - KEYBOARD_MARGIN - LINE_HEIGHT),
         animated: true
       });
     }
   };
 
-  const handleSelectionChange = (start: number, end: number) => {
+  const handleSelectionChange = (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+    const { start, end } = event.nativeEvent.selection;
     setSelection({ start, end });
     lastCursorPositionRef.current = start;
-    adjustScroll(start);
+    
+    // 커서 위치가 변경될 때마다 스크롤 조정
+    requestAnimationFrame(() => {
+      adjustScroll(start);
+    });
+  };
+
+  const handleContentSizeChange = (event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
+    const { width, height } = event.nativeEvent.contentSize;
+    textInputLayoutRef.current.height = height;
+  };
+
+  const handleScroll = (event: NativeSyntheticEvent<any>) => {
+    setScrollOffset(event.nativeEvent.contentOffset.y);
   };
 
   const insertImageMarker = (imageId: string) => {
@@ -197,13 +242,14 @@ const DiaryWrite: React.FC = () => {
           multiline
           value={text}
           onChangeText={setText}
-          onSelectionChange={(event) => 
-            handleSelectionChange(
-              event.nativeEvent.selection.start,
-              event.nativeEvent.selection.end
-            )
-          }
-          onLayout={onTextInputLayout}
+          onSelectionChange={handleSelectionChange}
+          onContentSizeChange={handleContentSizeChange}
+          onLayout={(e) => {
+            textInputLayoutRef.current = {
+              y: e.nativeEvent.layout.y,
+              height: e.nativeEvent.layout.height
+            };
+          }}
           selection={selection}
         />
         {elements}
@@ -215,7 +261,7 @@ const DiaryWrite: React.FC = () => {
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      keyboardVerticalOffset={0}
     >
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -240,6 +286,11 @@ const DiaryWrite: React.FC = () => {
         style={styles.contentContainer}
         keyboardShouldPersistTaps="handled"
         scrollEventThrottle={16}
+        onScroll={handleScroll}
+        onScrollBeginDrag={() => {
+          // 사용자가 직접 스크롤할 때 자동 스크롤 조정 일시 중지
+          textInputRef.current?.blur();
+        }}
       >
         {renderContent()}
       </ScrollView>
@@ -263,6 +314,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    paddingTop: 40,
   },
   header: {
     flexDirection: 'row',
@@ -303,16 +355,15 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     flex: 1,
-    padding: 16,
   },
   editorContainer: {
     flex: 1,
-    minHeight: Dimensions.get('window').height - 180,
+    padding: 16,
+    paddingBottom: BUTTON_HEIGHT + 16,
   },
   input: {
-    flex: 1,
     fontSize: 16,
-    lineHeight: 24,
+    lineHeight: LINE_HEIGHT,
     padding: 0,
     textAlignVertical: 'top',
   },
@@ -345,10 +396,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    height: BUTTON_HEIGHT,
     borderTopWidth: 1,
     borderTopColor: '#E1E1E1',
     backgroundColor: '#f8f8f8',
     padding: 8,
+    justifyContent: 'center',
   },
   addImageButton: {
     padding: 12,
