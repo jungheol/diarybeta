@@ -43,6 +43,7 @@ const DiaryEdit: React.FC = () => {
   const textInputRef = useRef<TextInput>(null);
   const lastCursorPositionRef = useRef<number>(0);
   const textInputLayoutRef = useRef<{ y: number; height: number }>({ y: 0, height: 0 });
+  const textInputPositionsRef = useRef<{ [key: number]: number }>({});
 
   useEffect(() => {
     loadDiaryEntry();
@@ -103,15 +104,47 @@ const DiaryEdit: React.FC = () => {
     return screenHeight - totalBottomHeight;
   };
 
-  const measureCursorPosition = (cursorOffset: number) => {
-    if (!textInputRef.current) return 0;
+const measureCursorPosition = (cursorOffset: number) => {
+  if (!textInputRef.current) return 0;  
 
-    const textContent = text.slice(0, cursorOffset);
-    const lines = textContent.split('\n');
-    const lineCount = lines.length;
+  const parts = text.split(/(\[IMG:[^\]]+\])/);
+  let totalHeight = 0;
+  let currentLength = 0;
+  let currentPartIndex = -1;
+  
+  // 현재 커서가 위치한 부분 찾기
+  for (let i = 0; i < parts.length; i++) {
+    if (currentLength + parts[i].length >= cursorOffset) {
+      currentPartIndex = i;
+      break;
+    }
+    currentLength += parts[i].length;
+  }
+
+  // 이전 모든 부분의 높이 계산
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    const match = part.match(/\[IMG:([^\]]+)\]/);
     
-    return textInputLayoutRef.current.y + (lineCount * LINE_HEIGHT);
-  };
+    if (match) {
+      const imageWidth = Dimensions.get('window').width - 32;
+      const imageHeight = imageWidth;  // 1:1 비율 가정
+      totalHeight += imageHeight + 16 * 2; // 상하 마진 16
+    } else {
+      const textPosition = textInputPositionsRef.current[i] || 0;
+      if (i === currentPartIndex) {
+        const textBeforeCursor = part.slice(0, cursorOffset - currentLength);
+        const linesBeforeCursor = textBeforeCursor.split('\n');
+        totalHeight += textPosition + (linesBeforeCursor.length * LINE_HEIGHT);
+      } else {
+        const lines = part.split('\n');
+        totalHeight += textPosition + (lines.length * LINE_HEIGHT);
+      }
+    }
+  }
+
+  return totalHeight;
+};
 
   const adjustScroll = (cursorOffset: number) => {
     if (!scrollViewRef.current || !textInputRef.current) return;
@@ -309,6 +342,15 @@ const DiaryEdit: React.FC = () => {
           }}
           onSelectionChange={handleSelectionChange}
           onContentSizeChange={handleContentSizeChange}
+          onLayout={(e) => {
+            textInputPositionsRef.current[index] = e.nativeEvent.layout.y;
+            if (index === 0) {
+              textInputLayoutRef.current = {
+                y: e.nativeEvent.layout.y,
+                height: e.nativeEvent.layout.height
+              };
+            }
+          }}
           selection={index === 0 ? selection : undefined}
         />
       );
