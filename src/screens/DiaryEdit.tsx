@@ -26,6 +26,7 @@ import { DiaryImage } from '../types';
 const KEYBOARD_MARGIN = 24;
 const BUTTON_HEIGHT = 60;
 const LINE_HEIGHT = 24;
+const IMAGE_MARGIN = 16; // 이미지 위아래 마진 값
 
 const DiaryEdit: React.FC = () => {
   const router = useRouter();
@@ -129,7 +130,7 @@ const measureCursorPosition = (cursorOffset: number) => {
     if (match) {
       const imageWidth = Dimensions.get('window').width - 32;
       const imageHeight = imageWidth;  // 1:1 비율 가정
-      totalHeight += imageHeight + 16 * 2; // 상하 마진 16
+      totalHeight += imageHeight + IMAGE_MARGIN * 2; // 상하 마진 16
     } else {
       const textPosition = textInputPositionsRef.current[i] || 0;
       if (i === currentPartIndex) {
@@ -308,53 +309,67 @@ const measureCursorPosition = (cursorOffset: number) => {
   const renderContent = () => {
     const parts = text.split(/(\[IMG:[^\]]+\])/);
     
-    return parts.map((part, index) => {
-      const match = part.match(/\[IMG:([^\]]+)\]/);
-      if (match) {
-        const imageId = match[1];
-        const image = images.find(img => img.id === imageId);
-        if (image) {
-          return (
-            <View key={`img-${index}`} style={styles.imageWrapper}>
-              <Image source={{ uri: image.uri }} style={styles.image} />
-              <TouchableOpacity 
-                style={styles.removeButtonContainer}
-                onPress={() => removeImage(image.id)}
-              >
-                <Text style={styles.removeButtonText}>×</Text>
-              </TouchableOpacity>
-            </View>
-          );
-        }
-        return null;
-      }
-      return (
-        <TextInput
-          key={`text-${index}`}
-          ref={index === 0 ? textInputRef : null}
-          style={styles.input}
-          multiline
-          value={part}
-          onChangeText={(newText) => {
-            const newParts = [...parts];
-            newParts[index] = newText;
-            setText(newParts.join(''));
-          }}
-          onSelectionChange={handleSelectionChange}
-          onContentSizeChange={handleContentSizeChange}
-          onLayout={(e) => {
-            textInputPositionsRef.current[index] = e.nativeEvent.layout.y;
-            if (index === 0) {
-              textInputLayoutRef.current = {
-                y: e.nativeEvent.layout.y,
-                height: e.nativeEvent.layout.height
-              };
+    return (
+      <TouchableOpacity 
+        style={styles.editorContainer}
+        activeOpacity={1}
+        onPress={() => {
+          textInputRef.current?.focus();
+        }}
+      >
+        {parts.map((part, index) => {
+          const match = part.match(/\[IMG:([^\]]+)\]/);
+          if (match) {
+            const imageId = match[1];
+            const image = images.find(img => img.id === imageId);
+            if (image) {
+              return (
+                <View key={`img-${index}`} style={styles.imageWrapper}>
+                  <Image source={{ uri: image.uri }} style={styles.image} />
+                  <TouchableOpacity 
+                    style={styles.removeButtonContainer}
+                    onPress={() => removeImage(image.id)}
+                  >
+                    <Text style={styles.removeButtonText}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              );
             }
-          }}
-          selection={index === 0 ? selection : undefined}
-        />
-      );
-    });
+            return null;
+          }
+          return (
+            <TextInput
+              key={`text-${index}`}
+              ref={index === 0 ? textInputRef : null}
+              style={[
+                styles.input,
+                // 첫 번째 TextInput에만 flex: 1 적용
+                index === 0 && styles.firstInput
+              ]}
+              multiline
+              value={part}
+              onChangeText={(newText) => {
+                const newParts = [...parts];
+                newParts[index] = newText;
+                setText(newParts.join(''));
+              }}
+              onSelectionChange={handleSelectionChange}
+              onContentSizeChange={handleContentSizeChange}
+              onLayout={(e) => {
+                textInputPositionsRef.current[index] = e.nativeEvent.layout.y;
+                if (index === 0) {
+                  textInputLayoutRef.current = {
+                    y: e.nativeEvent.layout.y,
+                    height: e.nativeEvent.layout.height
+                  };
+                }
+              }}
+              selection={index === 0 ? selection : undefined}
+            />
+          );
+        })}
+      </TouchableOpacity>
+    );
   };
 
   return (
@@ -395,11 +410,12 @@ const measureCursorPosition = (cursorOffset: number) => {
         keyboardShouldPersistTaps="handled"
         scrollEventThrottle={16}
         onScroll={handleScroll}
-        contentContainerStyle={styles.scrollContent}
+        onScrollBeginDrag={() => {
+          // 사용자가 직접 스크롤할 때 자동 스크롤 조정 일시 중지
+          textInputRef.current?.blur();
+        }}
       >
-        <View style={styles.editorContainer}>
-          {renderContent()}
-        </View>
+        {renderContent()}
       </ScrollView>
 
       {keyboardHeight > 0 && (
@@ -522,11 +538,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: BUTTON_HEIGHT + 16,
   },
-  scrollContent: {
-    flexGrow: 1,
-    padding: 16,
-    paddingBottom: BUTTON_HEIGHT,
-  },
   bottomBar: {
     position: 'absolute',
     left: 0,
@@ -543,6 +554,9 @@ const styles = StyleSheet.create({
     lineHeight: LINE_HEIGHT,
     padding: 0,
     textAlignVertical: 'top',
+  },
+  firstInput: {
+    flex: 1,
   },
   imageWrapper: {
     marginVertical: 8,
