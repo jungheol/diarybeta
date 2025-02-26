@@ -34,6 +34,31 @@ const MainScreen: React.FC = () => {
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const activeChild = childInfos.find(child => child.id === activeChildId);
 
+  // HTML 태그를 제거하고 텍스트만 추출하는 함수
+  const getPlainTextPreview = (html: string, maxLength: number = 30): string => {
+    if (!html) return '';
+    
+    // HTML 태그 제거
+    const withoutTags = html.replace(/<[^>]*>/g, ' ');
+    
+    // HTML 엔티티 변환 (예: &nbsp;, &amp; 등)
+    const withoutEntities = withoutTags
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+    
+    // 텍스트 정리 (연속된 공백, 탭, 줄바꿈 등을 하나의 공백으로 대체)
+    const cleanText = withoutEntities.replace(/\s+/g, ' ').trim();
+    
+    // 최대 길이로 자르기
+    return cleanText.length > maxLength 
+      ? cleanText.substring(0, maxLength) + '...' 
+      : cleanText;
+  };
+
   const loadDiaryEntries = async () => {
     try {
       const db = await getDBConnection();
@@ -46,12 +71,12 @@ const MainScreen: React.FC = () => {
         .toString()
         .padStart(2, '0')}-01`;
       
-      // SQL 쿼리에 날짜 범위 조건을 추가
+      // SQL 쿼리에서 content 전체를 가져오도록 수정
       const results = await db.getAllAsync<DiaryEntry>(
         `SELECT 
           diary_entry.id, 
           diary_entry.created_at AS createdAt, 
-          SUBSTR(diary_entry.content, 1, 10) AS content,
+          diary_entry.content, 
           JULIANDAY(diary_entry.created_at) - JULIANDAY(child.birth_date) AS days_since_birth,
           (SELECT image_uri FROM diary_picture 
         WHERE diary_entry_id = diary_entry.id 
@@ -232,25 +257,29 @@ const MainScreen: React.FC = () => {
           </View>
         )}
         <View style={[styles.contentContainer, !isFirst && styles.indentedContent]}>
-          <View style={styles.contentRow}>
-            <Text style={styles.entryContent} numberOfLines={1}>
-              {entry.content}
-            </Text>
-            {entry.thumbnailUri && (
-              <Image 
-                source={{ uri: entry.thumbnailUri }} 
-                style={styles.thumbnailImage}
-              />
-            )}
-          </View>
+          <Text 
+            style={styles.entryContent} 
+            numberOfLines={1} 
+            ellipsizeMode="tail"
+          >
+            {getPlainTextPreview(entry.content, 20)}
+          </Text>
           <Text style={styles.entryDate}>
           {new Date(entry.createdAt).toLocaleTimeString('ko-KR', {
             hour: '2-digit',
             minute: '2-digit',
             hour12: false
           })}
-          </Text>
+        </Text>
+      </View>
+      {entry.thumbnailUri && (
+        <View style={styles.thumbnailContainer}>
+          <Image 
+            source={{ uri: entry.thumbnailUri }} 
+            style={styles.thumbnailImage}
+          />
         </View>
+      )}
       </View>
     </TouchableOpacity>
   );
@@ -453,11 +482,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    width: '100%', // 전체 너비 사용
+    overflow: 'hidden',
   },
   diaryCard: {
     flexDirection: 'row',
     padding: 16,
     backgroundColor: 'transparent',
+    position: 'relative',
   },
   subsequentEntry: {
     paddingTop: 8,
@@ -472,6 +504,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
+    flexShrink: 0,
   },
   daysSince: {  // +5 날짜 text 표시
     fontSize: 16,
@@ -481,6 +514,7 @@ const styles = StyleSheet.create({
   contentContainer: {  // 다이어리 내용과 날짜 나오는 영역
     flex: 1,
     justifyContent: 'center',
+    paddingRight: 56,
   },
   entryDate: {  // diary 날짜
     fontSize: 14,
@@ -490,12 +524,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     marginBottom: 4,
+    width: '100%',
+  },
+  thumbnailContainer: {
+    position: 'absolute',
+    right: 16, // 오른쪽 여백
+    top: 16, // 상단 여백과 맞춤
+    width: 40,
+    height: 40,
   },
   thumbnailImage: {
     width: 40,
     height: 40,
     borderRadius: 4,
-    marginLeft: 8,
   },
   addButton: {  // addbutton 추후 수정
     position: 'absolute',
