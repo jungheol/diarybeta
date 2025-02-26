@@ -10,8 +10,7 @@ import {
   Modal,
   Image,
 } from 'react-native';
-import { PanGestureHandler, State as GestureState } from 'react-native-gesture-handler';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { getDBConnection } from '../database/schema';
 import { DiaryEntry, Child } from '../types';
 
@@ -25,10 +24,6 @@ const MainScreen: React.FC = () => {
   const router = useRouter();
   const [childInfos, setChildInfos] = useState<Child[]>([]);
   const [diaryEntries, setDiaryEntries] = useState<GroupedDiaryEntry[]>([]);
-  const { selectedDate: paramSelectedDate } = useLocalSearchParams<{ selectedDate?: string }>();
-  const [selectedDate, setSelectedDate] = useState<Date>(
-    paramSelectedDate ? new Date(paramSelectedDate) : new Date()
-  );  
   const [activeChildId, setActiveChildId] = useState<number | null>(null);
   const [menuModalVisible, setMenuModalVisible] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
@@ -62,16 +57,8 @@ const MainScreen: React.FC = () => {
   const loadDiaryEntries = async () => {
     try {
       const db = await getDBConnection();
-      // 선택 월의 시작일과 다음 달 시작일을 구함.
-      const year = selectedDate.getFullYear();
-      const month = selectedDate.getMonth(); // 0~11
-      const start = `${year}-${(month + 1).toString().padStart(2, '0')}-01`;
-      const nextMonthDate = new Date(year, month + 1, 1);
-      const end = `${nextMonthDate.getFullYear()}-${(nextMonthDate.getMonth() + 1)
-        .toString()
-        .padStart(2, '0')}-01`;
       
-      // SQL 쿼리에서 content 전체를 가져오도록 수정
+      // 최신순으로 모든 다이어리를 가져오는 쿼리로 변경
       const results = await db.getAllAsync<DiaryEntry>(
         `SELECT 
           diary_entry.id, 
@@ -85,10 +72,8 @@ const MainScreen: React.FC = () => {
         INNER JOIN child ON diary_entry.child_id = child.id
         WHERE child.is_active = 1 
           AND child.id = ?
-          AND diary_entry.created_at >= ? 
-          AND diary_entry.created_at < ?
         ORDER BY diary_entry.created_at DESC`,
-        [activeChildId, start, end]
+        [activeChildId]
       );
       
       const groupedEntries = groupEntriesByDate(results);
@@ -148,25 +133,25 @@ const MainScreen: React.FC = () => {
       const db = await getDBConnection();
       await db.runAsync('BEGIN TRANSACTION');
     
-    try {
-      // 현재 활성화된 프로필 비활성화
-      await db.runAsync('UPDATE child SET is_active = 0 WHERE is_active = 1');
-      
-      // 선택한 프로필 활성화
-      await db.runAsync('UPDATE child SET is_active = 1 WHERE id = ?', [child.id]);
-      
-      // 트랜잭션 완료
-      await db.runAsync('COMMIT');
-      
-      // 데이터 새로고침
-      await loadChildInfos();
-      await loadDiaryEntries();
-      setProfileModalVisible(false);
-    } catch (error) {
-      // 에러 발생 시 트랜잭션 롤백
-      await db.runAsync('ROLLBACK');
-      throw error;
-    }
+      try {
+        // 현재 활성화된 프로필 비활성화
+        await db.runAsync('UPDATE child SET is_active = 0 WHERE is_active = 1');
+        
+        // 선택한 프로필 활성화
+        await db.runAsync('UPDATE child SET is_active = 1 WHERE id = ?', [child.id]);
+        
+        // 트랜잭션 완료
+        await db.runAsync('COMMIT');
+        
+        // 데이터 새로고침
+        await loadChildInfos();
+        await loadDiaryEntries();
+        setProfileModalVisible(false);
+      } catch (error) {
+        // 에러 발생 시 트랜잭션 롤백
+        await db.runAsync('ROLLBACK');
+        throw error;
+      }
     } catch (error) {
       console.error('Failed to change profile:', error);
     }
@@ -180,46 +165,12 @@ const MainScreen: React.FC = () => {
     });
   };
 
-  const getCurrentMonthTitle = () => {
-    return `${selectedDate.getFullYear()}년 ${selectedDate.getMonth() + 1}월`;
-  };
-
-  const onHandlerStateChange = (event: any) => {
-    if (event.nativeEvent.state === GestureState.END) {
-      const { translationX } = event.nativeEvent;
-      const threshold = 50; // 스와이프 임계치 (픽셀 단위)
-      if (translationX > threshold) {
-        // 왼쪽 스와이프: 이전 달로 이동
-        const newDate = new Date(selectedDate);
-        newDate.setMonth(newDate.getMonth() - 1);
-        setSelectedDate(newDate);
-      } else if (translationX < -threshold) {
-        // 오른쪽 스와이프: 다음 달로 이동 (단, 현재 월이 아닐 경우만)
-        const now = new Date();
-        if (
-          selectedDate.getFullYear() < now.getFullYear() ||
-          (selectedDate.getFullYear() === now.getFullYear() && selectedDate.getMonth() < now.getMonth())
-        ) {
-          const newDate = new Date(selectedDate);
-          newDate.setMonth(newDate.getMonth() + 1);
-          // 만약 새로 계산한 달이 현재 달보다 커지면 업데이트하지 않음.
-          if (
-            newDate.getFullYear() < now.getFullYear() ||
-            (newDate.getFullYear() === now.getFullYear() && newDate.getMonth() <= now.getMonth())
-          ) {
-            setSelectedDate(newDate);
-          }
-        }
-      }
-    }
-  };
-
-  // 의존성: activeChildId나 selectedDate가 변경될 때 다이어리 로드
+  // 의존성: activeChildId가 변경될 때 다이어리 로드
   useEffect(() => {
     if (activeChildId) {
       loadDiaryEntries();
     }
-  }, [activeChildId, selectedDate]);
+  }, [activeChildId]);
 
   // 컴포넌트가 마운트될 때 자녀 정보를 불러옴
   useEffect(() => {
@@ -232,9 +183,8 @@ const MainScreen: React.FC = () => {
       if (activeChildId) {
         loadDiaryEntries();
       }
-    }, [activeChildId, selectedDate])
+    }, [activeChildId])
   );
-
 
   const renderEntry = (entry: DiaryEntry, isFirst: boolean) => (
     <TouchableOpacity
@@ -265,21 +215,22 @@ const MainScreen: React.FC = () => {
             {getPlainTextPreview(entry.content, 20)}
           </Text>
           <Text style={styles.entryDate}>
-          {new Date(entry.createdAt).toLocaleTimeString('ko-KR', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          })}
-        </Text>
-      </View>
-      {entry.thumbnailUri && (
-        <View style={styles.thumbnailContainer}>
-          <Image 
-            source={{ uri: entry.thumbnailUri }} 
-            style={styles.thumbnailImage}
-          />
+            {new Date(entry.createdAt).toLocaleTimeString('ko-KR', {
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false
+            })}
+          </Text>
         </View>
-      )}
+        
+        {entry.thumbnailUri && (
+          <View style={styles.thumbnailContainer}>
+            <Image 
+              source={{ uri: entry.thumbnailUri }} 
+              style={styles.thumbnailImage}
+            />
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -287,158 +238,169 @@ const MainScreen: React.FC = () => {
   // Render group of entries
   const renderDiaryGroup = ({ item }: { item: GroupedDiaryEntry }) => (
     <View style={styles.groupContainer}>
+      <Text style={styles.dateHeader}>{item.date}</Text>
       {item.entries.map((entry, index) => renderEntry(entry, index === 0))}
     </View>
   );
 
+  const openProfileModal = () => {
+    setProfileModalVisible(true);
+  };
+
   return (
-    <PanGestureHandler onHandlerStateChange={onHandlerStateChange}>
-      <SafeAreaView style={styles.container}>
-        {/* 헤더 영역 */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.profileBtn} onPress={() => setProfileModalVisible(true)}>
-            {/* 실제 사진 URI와 아이 데이터를 사용하세요 */}
+    <SafeAreaView style={styles.container}>
+      {/* 헤더 영역 - 수정된 부분 */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity style={styles.profileBtn} onPress={openProfileModal}>
             <Image 
               source={activeChild?.photoUrl ? { uri: activeChild.photoUrl } : require('../../assets/images/profile.jpeg')}
               style={styles.profileImage}
             />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{getCurrentMonthTitle()}</Text>
+          
+          {/* 아이 이름 및 드롭다운 아이콘 추가 */}
+          <TouchableOpacity style={styles.childNameContainer} onPress={openProfileModal}>
+            <Text style={styles.childName}>
+              {activeChild ? `${activeChild.lastName} ${activeChild.firstName}` : '아이 정보 없음'}
+            </Text>
+            <Text style={styles.dropdownIcon}>∨</Text>
+          </TouchableOpacity>
         </View>
-        
-        {/* 다이어리 리스트 */}
-        <FlatList
-          data={diaryEntries}
-          renderItem={renderDiaryGroup}
-          keyExtractor={item => item.date}
-          contentContainerStyle={styles.listContainer}
-        />
-        
-        {/* 중앙 하단 Add 버튼 */}
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => router.push({
-            pathname: '/diary-write',
-            params: { childId: activeChildId }
-          })}
-        >
-          <Text style={styles.addButtonText}>+</Text>
-        </TouchableOpacity>
+      </View>
+      
+      {/* 다이어리 리스트 */}
+      <FlatList
+        data={diaryEntries}
+        renderItem={renderDiaryGroup}
+        keyExtractor={item => item.date}
+        contentContainerStyle={styles.listContainer}
+      />
+      
+      {/* 중앙 하단 Add 버튼 */}
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={() => router.push({
+          pathname: '/diary-write',
+          params: { childId: activeChildId }
+        })}
+      >
+        <Text style={styles.addButtonText}>+</Text>
+      </TouchableOpacity>
 
-        {/* 왼쪽 하단 메뉴 버튼 */}
-        <TouchableOpacity
-          style={styles.menuButton}
-          onPress={() => setMenuModalVisible(true)}
-        >
-          <Text style={styles.menuButtonText}>≡</Text>
-        </TouchableOpacity>
+      {/* 왼쪽 하단 메뉴 버튼 */}
+      <TouchableOpacity
+        style={styles.menuButton}
+        onPress={() => setMenuModalVisible(true)}
+      >
+        <Text style={styles.menuButtonText}>≡</Text>
+      </TouchableOpacity>
 
-        {/* 메뉴 모달 */}
-        <Modal
-          visible={menuModalVisible}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setMenuModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.menuModal}>
-              <TouchableOpacity
-                style={styles.modalItem}
-                onPress={() => {
-                  setMenuModalVisible(false);
-                  router.push('/monthly');
-                }}
-              >
-                <Text style={styles.modalItemText}>월별보기</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalItem}
-                onPress={() => {
-                  setMenuModalVisible(false);
-                  router.push('/favorites'); // 즐겨찾기 화면으로 이동
-                }}
-              >
-                <Text style={styles.modalItemText}>즐겨찾기</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalItem}
-                onPress={() => {
-                  console.log("검색");
-                  setMenuModalVisible(false);
-                }}
-              >
-                <Text style={styles.modalItemText}>검색</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalItem}
-                onPress={() => {
-                  console.log("설정");
-                  setMenuModalVisible(false);
-                }}
-              >
-                <Text style={styles.modalItemText}>설정</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalCloseBtn}
-                onPress={() => setMenuModalVisible(false)}
-              >
-                <Text style={styles.modalCloseBtnText}>닫기</Text>
-              </TouchableOpacity>
-            </View>
+      {/* 메뉴 모달 */}
+      <Modal
+        visible={menuModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMenuModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.menuModal}>
+            <TouchableOpacity
+              style={styles.modalItem}
+              onPress={() => {
+                setMenuModalVisible(false);
+                router.push('/monthly');
+              }}
+            >
+              <Text style={styles.modalItemText}>월별보기</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.modalItem}
+              onPress={() => {
+                setMenuModalVisible(false);
+                router.push('/favorites'); // 즐겨찾기 화면으로 이동
+              }}
+            >
+              <Text style={styles.modalItemText}>즐겨찾기</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.modalItem}
+              onPress={() => {
+                console.log("검색");
+                setMenuModalVisible(false);
+              }}
+            >
+              <Text style={styles.modalItemText}>검색</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.modalItem}
+              onPress={() => {
+                console.log("설정");
+                setMenuModalVisible(false);
+              }}
+            >
+              <Text style={styles.modalItemText}>설정</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.modalCloseBtn}
+              onPress={() => setMenuModalVisible(false)}
+            >
+              <Text style={styles.modalCloseBtnText}>닫기</Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
+        </View>
+      </Modal>
 
-        {/* 프로필 모달 */}
-        <Modal
-          visible={profileModalVisible}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setProfileModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.profileModal}>
-              {childInfos.length > 0 ? (
-                childInfos.map((child, index) => (
-                  <TouchableOpacity key={index} onPress={() => handleProfileChange(child)}>
-                    <View key={index} style={styles.childRow}>
-                      <Image 
-                        source={child.photoUrl ? { uri: child.photoUrl } : require('../../assets/images/profile.jpeg')}
-                        style={styles.modalProfileImage}
-                      />
-                      <View style={styles.childInfoContainer}>
-                        <Text style={styles.modalChildName}>
-                          {child.lastName} {child.firstName}
-                        </Text>
-                        <Text style={[
-                          styles.childStatusLabel, 
-                          child.isActive === 1 ? styles.activeLabel : styles.inactiveLabel
-                        ]}>
-                          {child.isActive === 1 ? '활성화됨' : '비활성'}
-                        </Text>
-                      </View>
+      {/* 프로필 모달 */}
+      <Modal
+        visible={profileModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setProfileModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.profileModal}>
+            {childInfos.length > 0 ? (
+              childInfos.map((child, index) => (
+                <TouchableOpacity key={index} onPress={() => handleProfileChange(child)}>
+                  <View key={index} style={styles.childRow}>
+                    <Image 
+                      source={child.photoUrl ? { uri: child.photoUrl } : require('../../assets/images/profile.jpeg')}
+                      style={styles.modalProfileImage}
+                    />
+                    <View style={styles.childInfoContainer}>
+                      <Text style={styles.modalChildName}>
+                        {child.lastName} {child.firstName}
+                      </Text>
+                      <Text style={[
+                        styles.childStatusLabel, 
+                        child.isActive === 1 ? styles.activeLabel : styles.inactiveLabel
+                      ]}>
+                        {child.isActive === 1 ? '활성화됨' : '비활성'}
+                      </Text>
                     </View>
-                  </TouchableOpacity>
-                ))
-              ) : (
-                <Text style={styles.modalChildName}>등록된 아이가 없습니다.</Text>
-              )}
-              <TouchableOpacity 
-                style={styles.addChildButton} 
-                onPress={handleAddChild}  // 수정된 부분
-              >
-                <Text style={styles.addChildButtonText}>아이 추가</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.modalCloseBtn} 
-                onPress={() => setProfileModalVisible(false)}
-              >
-                <Text style={styles.modalCloseBtnText}>닫기</Text>
-              </TouchableOpacity>
-            </View>
+                  </View>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <Text style={styles.modalChildName}>등록된 아이가 없습니다.</Text>
+            )}
+            <TouchableOpacity 
+              style={styles.addChildButton} 
+              onPress={handleAddChild}
+            >
+              <Text style={styles.addChildButtonText}>아이 추가</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.modalCloseBtn} 
+              onPress={() => setProfileModalVisible(false)}
+            >
+              <Text style={styles.modalCloseBtnText}>닫기</Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
-      </SafeAreaView>
-    </PanGestureHandler>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 };
 
@@ -451,27 +413,46 @@ const styles = StyleSheet.create({
     height: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
-    position: 'relative',
+    paddingHorizontal: 16,
     marginBottom: 8,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   profileBtn: {
-    position: 'absolute',
-    left: 16,
-    top: 10,
+    marginRight: 12,
   },
   profileImage: {
     width: 40,
     height: 40,
     borderRadius: 20,
   },
-  listContainer: {  // 다이어리 리스트 뿌려주는 공간
+  childNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  childName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  dropdownIcon: {
+    fontSize: 14,
+    color: '#333',
+    marginLeft: 4,
+  },
+  listContainer: {
     padding: 16,
+    paddingBottom: 80, // 하단 버튼들을 위한 여유 공간
+  },
+  dateHeader: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#666',
   },
   groupContainer: {
     marginBottom: 16,
@@ -482,54 +463,55 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-    width: '100%', // 전체 너비 사용
+    width: '100%',
     overflow: 'hidden',
+    padding: 12,
   },
   diaryCard: {
     flexDirection: 'row',
-    padding: 16,
+    padding: 12,
     backgroundColor: 'transparent',
     position: 'relative',
   },
   subsequentEntry: {
     paddingTop: 8,
     paddingBottom: 8,
-    paddingLeft: 82, // Adjust this value based on daysSinceContainer width + padding
+    paddingLeft: 82,
   },
-  indentedContent: {
-    marginLeft: 0,
-  },
-  daysSinceContainer: {  // 날짜 text 들어가는 공간
+  daysSinceContainer: {
     width: 50,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
     flexShrink: 0,
   },
-  daysSince: {  // +5 날짜 text 표시
+  daysSince: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#666',
   },
-  contentContainer: {  // 다이어리 내용과 날짜 나오는 영역
+  contentContainer: {
     flex: 1,
     justifyContent: 'center',
     paddingRight: 56,
   },
-  entryDate: {  // diary 날짜
-    fontSize: 14,
-    color: '#666'
+  indentedContent: {
+    marginLeft: 0,
   },
-  entryContent: {  // diary 첫 줄 내용
+  entryContent: {
     fontSize: 16,
     color: '#333',
     marginBottom: 4,
     width: '100%',
   },
+  entryDate: {
+    fontSize: 14,
+    color: '#666',
+  },
   thumbnailContainer: {
     position: 'absolute',
-    right: 16, // 오른쪽 여백
-    top: 16, // 상단 여백과 맞춤
+    right: 16,
+    top: 16,
     width: 40,
     height: 40,
   },
@@ -538,7 +520,7 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 4,
   },
-  addButton: {  // addbutton 추후 수정
+  addButton: {
     position: 'absolute',
     bottom: 24,
     alignSelf: 'center',
@@ -580,7 +562,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  /* 메뉴 모달 */
   menuModal: {
     width: '80%',
     backgroundColor: '#FFF',
@@ -606,7 +587,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#007AFF',
   },
-  /* 프로필 모달 */
   profileModal: {
     width: '80%',
     backgroundColor: '#FFF',
@@ -651,18 +631,6 @@ const styles = StyleSheet.create({
   addChildButtonText: {
     color: '#FFF',
     fontSize: 16,
-  },
-  profileCreateModal: {
-    width: '90%',
-    backgroundColor: '#FFF',
-    borderRadius: 8,
-    padding: 16,
-    maxHeight: '80%',
-  },
-  contentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
 });
 

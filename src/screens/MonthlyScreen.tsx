@@ -78,11 +78,13 @@ const MonthlyScreen: React.FC = () => {
   }, [activeChildId]);
 
   const handleMonthSelect = (yearMonth: string) => {
-    const date = new Date(yearMonth + '-01');
-    // MainScreen으로 돌아가면서 선택된 날짜 전달
+    // 새로운 MonthlyDetailScreen으로 이동하도록 변경
     router.push({
-      pathname: '/main',
-      params: { selectedDate: date.toISOString() }
+      pathname: '/monthly-detail',
+      params: { 
+        yearMonth, 
+        childId: activeChildId?.toString() 
+      }
     });
   };
 
@@ -134,6 +136,7 @@ const styles = StyleSheet.create({
   backButton: {
     fontSize: 24,
     marginRight: 16,
+    color: '#666',
   },
   headerTitle: {
     fontSize: 18,
