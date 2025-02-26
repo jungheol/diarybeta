@@ -1,50 +1,38 @@
 import React, { useState, useEffect, useRef } from 'react';
+import * as FileSystem from 'expo-file-system';
 import {
   View,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Text,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   Alert,
-  Image,
   Dimensions,
   Modal,
   Keyboard,
   KeyboardEvent,
-  NativeSyntheticEvent,
-  TextInputSelectionChangeEventData,
-  TextInputContentSizeChangeEventData,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { getDBConnection } from '../database/schema';
 import { DiaryImage } from '../types';
+import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
 
-const KEYBOARD_MARGIN = 24;
-const BUTTON_HEIGHT = 60;
-const LINE_HEIGHT = 24;
-const IMAGE_MARGIN = 16; // 이미지 위아래 마진 값
+const BUTTON_HEIGHT = 60; // 사진 추가 버튼의 높이
+const KEYBOARD_MARGIN = 8; // 키보드 위 여유 공간
 
 const DiaryEdit: React.FC = () => {
   const router = useRouter();
   const { diaryId, childId } = useLocalSearchParams<{ diaryId: string; childId: string }>();
-  const [text, setText] = useState<string>('');
+  const [content, setContent] = useState<string>('');
   const [images, setImages] = useState<DiaryImage[]>([]);
-  const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
   const [createdAt, setCreatedAt] = useState<string>('');
   const [bookmark, setBookmark] = useState<number>(0);
   const [menuModalVisible, setMenuModalVisible] = useState<boolean>(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [scrollOffset, setScrollOffset] = useState(0);
-
-  const scrollViewRef = useRef<ScrollView>(null);
-  const textInputRef = useRef<TextInput>(null);
-  const lastCursorPositionRef = useRef<number>(0);
-  const textInputLayoutRef = useRef<{ y: number; height: number }>({ y: 0, height: 0 });
-  const textInputPositionsRef = useRef<{ [key: number]: number }>({});
+  
+  const richTextRef = useRef<RichEditor>(null);
 
   useEffect(() => {
     loadDiaryEntry();
@@ -85,7 +73,9 @@ const DiaryEdit: React.FC = () => {
       );
 
       if (result) {
-        setText(result.content);
+        // 기존 텍스트 및 이미지 마커 형식에서 HTML 형식으로 변환
+        const htmlContent = await convertToHtml(result.content, imageResults);
+        setContent(htmlContent);
         setCreatedAt(result.created_at);
         setBookmark(result.bookmark);
       }
@@ -99,154 +89,128 @@ const DiaryEdit: React.FC = () => {
     }
   };
 
-  const calculateVisibleHeight = () => {
-    const screenHeight = Dimensions.get('window').height;
-    const totalBottomHeight = keyboardHeight + (keyboardHeight > 0 ? BUTTON_HEIGHT : 0);
-    return screenHeight - totalBottomHeight;
-  };
+  // 기존 텍스트 형식([IMG:id])에서 HTML 형식으로 변환
+  const convertToHtml = async (text: string, imageData: { image_uri: string; image_id: string }[]) => {
+    const parts = text.split(/(\[IMG:[^\]]+\])/);
+    let htmlContent = '';
 
-const measureCursorPosition = (cursorOffset: number) => {
-  if (!textInputRef.current) return 0;  
-
-  const parts = text.split(/(\[IMG:[^\]]+\])/);
-  let totalHeight = 0;
-  let currentLength = 0;
-  let currentPartIndex = -1;
-  
-  // 현재 커서가 위치한 부분 찾기
-  for (let i = 0; i < parts.length; i++) {
-    if (currentLength + parts[i].length >= cursorOffset) {
-      currentPartIndex = i;
-      break;
-    }
-    currentLength += parts[i].length;
-  }
-
-  // 이전 모든 부분의 높이 계산
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-    const match = part.match(/\[IMG:([^\]]+)\]/);
-    
-    if (match) {
-      const imageWidth = Dimensions.get('window').width - 32;
-      const imageHeight = imageWidth;  // 1:1 비율 가정
-      totalHeight += imageHeight + IMAGE_MARGIN * 2; // 상하 마진 16
-    } else {
-      const textPosition = textInputPositionsRef.current[i] || 0;
-      if (i === currentPartIndex) {
-        const textBeforeCursor = part.slice(0, cursorOffset - currentLength);
-        const linesBeforeCursor = textBeforeCursor.split('\n');
-        totalHeight += textPosition + (linesBeforeCursor.length * LINE_HEIGHT);
+    for (const part of parts) {
+      const match = part.match(/\[IMG:([^\]]+)\]/);
+      if (match) {
+        const imageId = match[1];
+        const image = imageData.find(img => img.image_id === imageId);
+        if (image) {
+          try {
+            // 이미지를 Base64로 인코딩
+            const base64 = await FileSystem.readAsStringAsync(image.image_uri, { 
+              encoding: FileSystem.EncodingType.Base64 
+            });
+            const base64Uri = `data:image/jpeg;base64,${base64}`;
+            
+            // 이미지 태그 추가
+            htmlContent += `<img src="${base64Uri}" data-id="${imageId}" alt="diary image" style="max-width:100%; height:auto; margin:10px 0;" /><br>`;
+          } catch (error) {
+            console.error('이미지 로드 오류:', error);
+          }
+        }
       } else {
-        const lines = part.split('\n');
-        totalHeight += textPosition + (lines.length * LINE_HEIGHT);
+        // 일반 텍스트는 그대로 추가하되, 줄바꿈 처리
+        htmlContent += part.replace(/\n/g, '<br>');
       }
     }
-  }
 
-  return totalHeight;
-};
+    return htmlContent;
+  };
 
-  const adjustScroll = (cursorOffset: number) => {
-    if (!scrollViewRef.current || !textInputRef.current) return;
-
-    const visibleHeight = calculateVisibleHeight();
-    const cursorY = measureCursorPosition(cursorOffset);
+  // HTML에서 이미지 ID 추출 (data-id 속성 사용)
+  const extractImageIds = (html: string): string[] => {
+    // data-id 속성 추출 정규식
+    const regex = /data-id="([^"]+)"/g;
+    const imageIds: string[] = [];
+    let match;
     
-    const visibleTop = scrollOffset;
-    const visibleBottom = visibleTop + visibleHeight - KEYBOARD_MARGIN - BUTTON_HEIGHT;
-
-    // 커서가 키보드 위 24px에 도달하면 스크롤 시작
-    const scrollTriggerPoint = visibleBottom - (LINE_HEIGHT * 2);
-
-    if (cursorY > scrollTriggerPoint) {
-      scrollViewRef.current.scrollTo({
-        y: cursorY - visibleHeight + KEYBOARD_MARGIN + (LINE_HEIGHT * 2) + BUTTON_HEIGHT,
-        animated: true
-      });
-    } else if (cursorY < visibleTop + KEYBOARD_MARGIN) {
-      scrollViewRef.current.scrollTo({
-        y: Math.max(0, cursorY - KEYBOARD_MARGIN - LINE_HEIGHT),
-        animated: true
-      });
+    console.log('HTML 추출 시작 (처음 100자):', html.substring(0, 100) + '...');
+    
+    while ((match = regex.exec(html)) !== null) {
+      const id = match[1];
+      console.log('추출된 이미지 ID:', id);
+      imageIds.push(id);
     }
-  };
-
-  const handleSelectionChange = (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
-    const { start, end } = event.nativeEvent.selection;
-    setSelection({ start, end });
-    lastCursorPositionRef.current = start;
     
-    requestAnimationFrame(() => {
-      adjustScroll(start);
-    });
-  };
-
-  const handleContentSizeChange = (event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
-    const { height } = event.nativeEvent.contentSize;
-    textInputLayoutRef.current.height = height;
-  };
-
-  const handleScroll = (event: NativeSyntheticEvent<any>) => {
-    setScrollOffset(event.nativeEvent.contentOffset.y);
-  };
-
-  const insertImageMarker = (imageId: string) => {
-    const cursorPosition = lastCursorPositionRef.current;
-    const before = text.slice(0, cursorPosition);
-    const after = text.slice(cursorPosition);
-    const imageMarker = `\n[IMG:${imageId}]\n`;
-    const newText = `${before}${imageMarker}${after}`;
-    setText(newText);
-
-    const newPosition = before.length + imageMarker.length;
-    setSelection({ start: newPosition, end: newPosition });
-    lastCursorPositionRef.current = newPosition;
-
-    setTimeout(() => {
-      adjustScroll(newPosition);
-    }, 100);
+    console.log('추출된 모든 이미지 ID:', imageIds);
+    return imageIds;
   };
 
   const pickImage = async () => {
-    if (images.length >= 10) {
-      Alert.alert('알림', '사진은 최대 10장까지만 추가할 수 있습니다.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 1,
-    });
-
-    if (!result.canceled && result.assets[0].uri) {
-      const imageId = `${Date.now()}`;
-      const newImage: DiaryImage = {
-        id: imageId,
-        uri: result.assets[0].uri
-      };
-      
-      setImages([...images, newImage]);
-      insertImageMarker(imageId);
-    }
-  };
-
-  const removeImage = (imageId: string) => {
-    const newText = text.replace(new RegExp(`\\n?\\[IMG:${imageId}\\]\\n?`, 'g'), '\n');
-    setText(newText.replace(/\n{3,}/g, '\n\n'));
-    setImages(images.filter(img => img.id !== imageId));
-  };
+      if (images.length >= 10) {
+        Alert.alert('알림', '사진은 최대 10장까지만 추가할 수 있습니다.');
+        return;
+      }
+  
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 1,
+      });
+  
+      if (!result.canceled && result.assets[0].uri) {
+        const imageId = `${Date.now()}`;
+        const newImage: DiaryImage = {
+          id: imageId,
+          uri: result.assets[0].uri
+        };
+        
+        setImages([...images, newImage]);
+        
+        // Base64 인코딩을 사용한 이미지 삽입
+        try {
+          // 이미지를 Base64로 인코딩
+          const imageUri = result.assets[0].uri;
+          console.log('이미지 URI:', imageUri);
+          
+          const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: FileSystem.EncodingType.Base64 });
+          const base64Uri = `data:image/jpeg;base64,${base64}`;
+          
+          // 이미지 객체 추가
+          const imageId = `${Date.now()}`;
+          const newImage: DiaryImage = {
+            id: imageId,
+            uri: imageUri
+          };
+          setImages([...images, newImage]);
+          
+          // Base64 이미지 삽입 (이미지 뒤에 줄바꿈 추가)
+          const imgTag = `<img src="${base64Uri}" data-id="${imageId}" alt="diary image" style="max-width:100%; height:auto; margin:10px 0;" /><br><br>`;
+          richTextRef.current?.insertHTML(imgTag);
+          
+          console.log('이미지 Base64 삽입 완료 (길이):', base64.length);
+          
+          // 이미지 삽입 후 포커스를 에디터로 되돌림
+          setTimeout(() => {
+            richTextRef.current?.focusContentEditor();
+          }, 500); // 시간을 조금 더 늘려 에디터가 렌더링될 시간 확보
+        } catch (error) {
+          console.error('이미지 Base64 변환 오류:', error);
+          Alert.alert('오류', '이미지를 추가하는 데 문제가 발생했습니다.');
+        }
+      }
+    };
 
   const handleUpdate = async () => {
-    if (!text.trim()) return;
+    if (!content.trim()) return;
 
     try {
+      // 현재 HTML에서 사용된 이미지 ID 추출
+      const usedImageIds = extractImageIds(content);
+      
+      // 실제로 사용된 이미지만 필터링
+      const usedImages = images.filter(img => usedImageIds.includes(img.id));
+      
       const db = await getDBConnection();
       await db.withTransactionAsync(async () => {
         await db.runAsync(
           `UPDATE diary_entry SET content = ? WHERE id = ?`,
-          [text.trim(), diaryId]
+          [content.trim(), diaryId]
         );
 
         await db.runAsync(
@@ -254,7 +218,7 @@ const measureCursorPosition = (cursorOffset: number) => {
           [diaryId]
         );
 
-        for (const image of images) {
+        for (const image of usedImages) {
           await db.runAsync(
             `INSERT INTO diary_picture (diary_entry_id, image_uri, image_id) VALUES (?, ?, ?)`,
             [diaryId, image.uri, image.id]
@@ -306,72 +270,6 @@ const measureCursorPosition = (cursorOffset: number) => {
     }
   };
 
-  const renderContent = () => {
-    const parts = text.split(/(\[IMG:[^\]]+\])/);
-    
-    return (
-      <TouchableOpacity 
-        style={styles.editorContainer}
-        activeOpacity={1}
-        onPress={() => {
-          textInputRef.current?.focus();
-        }}
-      >
-        {parts.map((part, index) => {
-          const match = part.match(/\[IMG:([^\]]+)\]/);
-          if (match) {
-            const imageId = match[1];
-            const image = images.find(img => img.id === imageId);
-            if (image) {
-              return (
-                <View key={`img-${index}`} style={styles.imageWrapper}>
-                  <Image source={{ uri: image.uri }} style={styles.image} />
-                  <TouchableOpacity 
-                    style={styles.removeButtonContainer}
-                    onPress={() => removeImage(image.id)}
-                  >
-                    <Text style={styles.removeButtonText}>×</Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            }
-            return null;
-          }
-          return (
-            <TextInput
-              key={`text-${index}`}
-              ref={index === 0 ? textInputRef : null}
-              style={[
-                styles.input,
-                // 첫 번째 TextInput에만 flex: 1 적용
-                index === 0 && styles.firstInput
-              ]}
-              multiline
-              value={part}
-              onChangeText={(newText) => {
-                const newParts = [...parts];
-                newParts[index] = newText;
-                setText(newParts.join(''));
-              }}
-              onSelectionChange={handleSelectionChange}
-              onContentSizeChange={handleContentSizeChange}
-              onLayout={(e) => {
-                textInputPositionsRef.current[index] = e.nativeEvent.layout.y;
-                if (index === 0) {
-                  textInputLayoutRef.current = {
-                    y: e.nativeEvent.layout.y,
-                    height: e.nativeEvent.layout.height
-                  };
-                }
-              }}
-              selection={index === 0 ? selection : undefined}
-            />
-          );
-        })}
-      </TouchableOpacity>
-    );
-  };
-
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -395,31 +293,48 @@ const measureCursorPosition = (cursorOffset: number) => {
             <Text style={styles.moreButtonText}>⋮</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.saveButton, !text.trim() && styles.saveButtonDisabled]}
+            style={[styles.saveButton, !content.trim() && styles.saveButtonDisabled]}
             onPress={handleUpdate}
-            disabled={!text.trim()}
+            disabled={!content.trim()}
           >
             <Text style={styles.saveButtonText}>✓</Text>
           </TouchableOpacity>
         </View>
       </View>
-
-      <ScrollView 
-        ref={scrollViewRef}
-        style={styles.contentContainer}
-        keyboardShouldPersistTaps="handled"
-        scrollEventThrottle={16}
-        onScroll={handleScroll}
-        onScrollBeginDrag={() => {
-          // 사용자가 직접 스크롤할 때 자동 스크롤 조정 일시 중지
-          textInputRef.current?.blur();
+      
+      {/* 리치 텍스트 에디터 */}
+      <RichEditor
+        ref={richTextRef}
+        initialContentHTML={content}
+        onChange={setContent}
+        placeholder="일기를 작성하세요..."
+        initialHeight={Dimensions.get('window').height - 120}
+        editorStyle={{
+          backgroundColor: '#FFFFFF',
+          contentCSSText: `
+            font-family: system-ui;
+            font-size: 16px;
+            padding: 12px;
+            line-height: 1.5;
+          `
         }}
-      >
-        {renderContent()}
-      </ScrollView>
+        style={styles.editor}
+        useContainer={true}
+        pasteAsPlainText={true}
+        onPaste={(data) => {
+          console.log('붙여넣기 이벤트:', data);
+        }}
+      />
 
       {keyboardHeight > 0 && (
-        <View style={[styles.bottomBar, { bottom: keyboardHeight }]}>
+        <View style={[
+          styles.bottomBar, 
+          { 
+            bottom: keyboardHeight,
+            // 버튼을 약간 위로 올리기
+            transform: [{ translateY: -4 }]
+          }
+        ]}>
           <TouchableOpacity 
             style={[styles.addImageButton, images.length >= 10 && styles.addImageButtonDisabled]} 
             onPress={pickImage}
@@ -530,13 +445,10 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: '#FFFFFF',
   },
-  contentContainer: {
+  editor: {
     flex: 1,
-  },
-  editorContainer: {
-    flex: 1,
-    padding: 16,
-    paddingBottom: BUTTON_HEIGHT + 16,
+    paddingHorizontal: 16,
+    paddingBottom: 32,
   },
   bottomBar: {
     position: 'absolute',
@@ -549,40 +461,6 @@ const styles = StyleSheet.create({
     padding: 8,
     justifyContent: 'center',
   },
-  input: {
-    fontSize: 16,
-    lineHeight: LINE_HEIGHT,
-    padding: 0,
-    textAlignVertical: 'top',
-  },
-  firstInput: {
-    flex: 1,
-  },
-  imageWrapper: {
-    marginVertical: 8,
-    alignItems: 'center',
-  },
-  image: {
-    width: Dimensions.get('window').width - 32,
-    height: Dimensions.get('window').width - 32,
-    borderRadius: 8,
-  },
-  removeButtonContainer: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  removeButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
   addImageButton: {
     padding: 12,
     borderRadius: 8,
@@ -593,8 +471,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#E1E1E1',
   },
   addImageButtonText: {
-    color: '#FFF',
     fontSize: 16,
+    color: '#FFF',
     fontWeight: 'bold',
   },
   modalOverlay: {
