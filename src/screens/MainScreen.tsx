@@ -186,59 +186,66 @@ const MainScreen: React.FC = () => {
     }, [activeChildId])
   );
 
-  const renderEntry = (entry: DiaryEntry, isFirst: boolean) => (
-    <TouchableOpacity
-      key={entry.id}
-      onPress={() =>
-        router.push({
-          pathname: '/diary-edit',
-          params: { diaryId: entry.id, childId: activeChildId },
-        })
-      }
-    >
-      <View style={[styles.diaryCard, !isFirst && styles.subsequentEntry]}>
-        {isFirst && (
-          <View style={styles.daysSinceContainer}>
-            <Text style={styles.daysSince}>
-              {Math.floor(entry.days_since_birth) >= 0 
-                ? `+${Math.floor(entry.days_since_birth)}` 
-                : `${Math.floor(entry.days_since_birth)}`}
+  const renderEntry = (entry: DiaryEntry, isFirst: boolean) => {
+    // 날짜와 시간을 분리하여 표시
+    const createdDate = new Date(entry.createdAt);
+    const formattedDate = createdDate.toLocaleDateString('ko-KR'); // 날짜
+    const formattedTime = createdDate.toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }); // 시간
+    
+    return (
+      <TouchableOpacity
+        key={entry.id}
+        onPress={() =>
+          router.push({
+            pathname: '/diary-edit',
+            params: { diaryId: entry.id, childId: activeChildId },
+          })
+        }
+      >
+        <View style={[styles.diaryCard, !isFirst && styles.subsequentEntry]}>
+          {isFirst && (
+            <View style={styles.daysSinceContainer}>
+              <Text style={styles.daysSince}>
+                {Math.floor(entry.days_since_birth) >= 0 
+                  ? `+${Math.floor(entry.days_since_birth)}` 
+                  : `${Math.floor(entry.days_since_birth)}`}
+              </Text>
+            </View>
+          )}
+          <View style={[styles.contentContainer, !isFirst && styles.indentedContent]}>
+            {/* 작성 시간이 먼저 표시되도록 순서 변경 */}
+            <Text style={styles.entryDate}>
+              {formattedDate} {formattedTime}
+            </Text>
+            <Text 
+              style={styles.entryContent} 
+              numberOfLines={1} 
+              ellipsizeMode="tail"
+            >
+              {getPlainTextPreview(entry.content, 20)}
             </Text>
           </View>
-        )}
-        <View style={[styles.contentContainer, !isFirst && styles.indentedContent]}>
-          <Text 
-            style={styles.entryContent} 
-            numberOfLines={1} 
-            ellipsizeMode="tail"
-          >
-            {getPlainTextPreview(entry.content, 20)}
-          </Text>
-          <Text style={styles.entryDate}>
-            {new Date(entry.createdAt).toLocaleTimeString('ko-KR', {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false
-            })}
-          </Text>
+          
+          {entry.thumbnailUri && (
+            <View style={styles.thumbnailContainer}>
+              <Image 
+                source={{ uri: entry.thumbnailUri }} 
+                style={styles.thumbnailImage}
+              />
+            </View>
+          )}
         </View>
-        
-        {entry.thumbnailUri && (
-          <View style={styles.thumbnailContainer}>
-            <Image 
-              source={{ uri: entry.thumbnailUri }} 
-              style={styles.thumbnailImage}
-            />
-          </View>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   // Render group of entries
   const renderDiaryGroup = ({ item }: { item: GroupedDiaryEntry }) => (
     <View style={styles.groupContainer}>
-      <Text style={styles.dateHeader}>{item.date}</Text>
       {item.entries.map((entry, index) => renderEntry(entry, index === 0))}
     </View>
   );
@@ -247,9 +254,35 @@ const MainScreen: React.FC = () => {
     setProfileModalVisible(true);
   };
 
+  // 하단 탭바 메뉴 항목
+  const navigateToMonthly = () => {
+    router.push('/monthly');
+  };
+
+  const navigateToSearch = () => {
+    console.log("검색 기능");
+    // 검색 화면으로 이동
+  };
+
+  const navigateToAddDiary = () => {
+    router.push({
+      pathname: '/diary-write',
+      params: { childId: activeChildId }
+    });
+  };
+
+  const navigateToFavorites = () => {
+    router.push('/favorites');
+  };
+
+  const navigateToSettings = () => {
+    console.log("설정 기능");
+    // 설정 화면으로 이동
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* 헤더 영역 - 수정된 부분 */}
+      {/* 헤더 영역 */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity style={styles.profileBtn} onPress={openProfileModal}>
@@ -259,7 +292,7 @@ const MainScreen: React.FC = () => {
             />
           </TouchableOpacity>
           
-          {/* 아이 이름 및 드롭다운 아이콘 추가 */}
+          {/* 아이 이름 및 드롭다운 아이콘 */}
           <TouchableOpacity style={styles.childNameContainer} onPress={openProfileModal}>
             <Text style={styles.childName}>
               {activeChild ? `${activeChild.lastName} ${activeChild.firstName}` : '아이 정보 없음'}
@@ -277,79 +310,35 @@ const MainScreen: React.FC = () => {
         contentContainerStyle={styles.listContainer}
       />
       
-      {/* 중앙 하단 Add 버튼 */}
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => router.push({
-          pathname: '/diary-write',
-          params: { childId: activeChildId }
-        })}
-      >
-        <Text style={styles.addButtonText}>+</Text>
-      </TouchableOpacity>
-
-      {/* 왼쪽 하단 메뉴 버튼 */}
-      <TouchableOpacity
-        style={styles.menuButton}
-        onPress={() => setMenuModalVisible(true)}
-      >
-        <Text style={styles.menuButtonText}>≡</Text>
-      </TouchableOpacity>
-
-      {/* 메뉴 모달 */}
-      <Modal
-        visible={menuModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setMenuModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.menuModal}>
-            <TouchableOpacity
-              style={styles.modalItem}
-              onPress={() => {
-                setMenuModalVisible(false);
-                router.push('/monthly');
-              }}
-            >
-              <Text style={styles.modalItemText}>월별보기</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.modalItem}
-              onPress={() => {
-                setMenuModalVisible(false);
-                router.push('/favorites'); // 즐겨찾기 화면으로 이동
-              }}
-            >
-              <Text style={styles.modalItemText}>즐겨찾기</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.modalItem}
-              onPress={() => {
-                console.log("검색");
-                setMenuModalVisible(false);
-              }}
-            >
-              <Text style={styles.modalItemText}>검색</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.modalItem}
-              onPress={() => {
-                console.log("설정");
-                setMenuModalVisible(false);
-              }}
-            >
-              <Text style={styles.modalItemText}>설정</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.modalCloseBtn}
-              onPress={() => setMenuModalVisible(false)}
-            >
-              <Text style={styles.modalCloseBtnText}>닫기</Text>
-            </TouchableOpacity>
+      {/* 하단 탭바 */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity style={styles.tabItem} onPress={navigateToMonthly}>
+          <Text style={styles.tabIcon}>📅</Text>
+          <Text style={styles.tabLabel}>월별보기</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.tabItem} onPress={navigateToSearch}>
+          <Text style={styles.tabIcon}>🔍</Text>
+          <Text style={styles.tabLabel}>검색</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.tabItemCenter} onPress={navigateToAddDiary}>
+          <View style={styles.addDiaryButton}>
+            <Text style={styles.addDiaryButtonText}>+</Text>
           </View>
-        </View>
-      </Modal>
+          <Text style={styles.tabLabel}>추가</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.tabItem} onPress={navigateToFavorites}>
+          <Text style={styles.tabIcon}>⭐</Text>
+          <Text style={styles.tabLabel}>즐겨찾기</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.tabItem} onPress={navigateToSettings}>
+          <Text style={styles.tabIcon}>⚙️</Text>
+          <Text style={styles.tabLabel}>설정</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* 프로필 모달 */}
       <Modal
@@ -446,13 +435,7 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     padding: 16,
-    paddingBottom: 80, // 하단 버튼들을 위한 여유 공간
-  },
-  dateHeader: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    color: '#666',
+    paddingBottom: 100, // 하단 탭바 공간 확보
   },
   groupContainer: {
     marginBottom: 16,
@@ -469,7 +452,7 @@ const styles = StyleSheet.create({
   },
   diaryCard: {
     flexDirection: 'row',
-    padding: 12,
+    padding: 8,
     backgroundColor: 'transparent',
     position: 'relative',
   },
@@ -482,13 +465,14 @@ const styles = StyleSheet.create({
     width: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 24,
     flexShrink: 0,
   },
   daysSince: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#666',
+    paddingRight: 8,
   },
   contentContainer: {
     flex: 1,
@@ -505,13 +489,14 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   entryDate: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
+    marginBottom: 4, // 날짜와 내용 사이 간격 추가
   },
   thumbnailContainer: {
     position: 'absolute',
-    right: 16,
-    top: 16,
+    right: 8,
+    top: 8,
     width: 40,
     height: 40,
   },
@@ -520,72 +505,63 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 4,
   },
-  addButton: {
+  // 하단 탭바 스타일
+  tabBar: {
+    flexDirection: 'row',
+    height: 80,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
     position: 'absolute',
-    bottom: 24,
-    alignSelf: 'center',
-    width: 108,
-    height: 40,
-    borderRadius: 28,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingBottom: 10, // 아이폰 홈 인디케이터 공간
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 10,
+  },
+  tabItem: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 8,
+  },
+  tabItemCenter: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+  },
+  tabIcon: {
+    fontSize: 22,
+    marginBottom: 2,
+  },
+  tabLabel: {
+    fontSize: 10,
+    color: '#666',
+  },
+  addDiaryButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#007AFF',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    marginBottom: 2,
   },
-  addButtonText: {
-    fontSize: 32,
+  addDiaryButtonText: {
+    fontSize: 28,
     color: '#FFFFFF',
     lineHeight: 32,
   },
-  menuButton: {
-    position: 'absolute',
-    bottom: 24,
-    left: 24,
-    width: 50,
-    height: 50,
-    backgroundColor: '#007AFF',
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  menuButtonText: {
-    fontSize: 28,
-    color: '#fff',
-  },
+  // 모달 스타일
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  menuModal: {
-    width: '80%',
-    backgroundColor: '#FFF',
-    borderRadius: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-  },
-  modalItem: {
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  modalItemText: {
-    fontSize: 16,
-  },
-  modalCloseBtn: {
-    marginTop: 8,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
-  },
-  modalCloseBtnText: {
-    fontSize: 16,
-    color: '#007AFF',
   },
   profileModal: {
     width: '80%',
@@ -631,6 +607,18 @@ const styles = StyleSheet.create({
   addChildButtonText: {
     color: '#FFF',
     fontSize: 16,
+  },
+  modalCloseBtn: {
+    marginTop: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+    width: '100%',
+  },
+  modalCloseBtnText: {
+    fontSize: 16,
+    color: '#007AFF',
   },
 });
 

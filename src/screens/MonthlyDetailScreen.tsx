@@ -113,7 +113,15 @@ const MonthlyDetailScreen: React.FC = () => {
     loadDiaryEntries();
   }, [yearMonth, childId]);
 
-  const renderEntry = (entry: DiaryEntry, isFirst: boolean) => (
+  const renderEntry = (entry: DiaryEntry, isFirst: boolean) => {
+    const createdDate = new Date(entry.createdAt);
+    const formattedDate = createdDate.toLocaleDateString('ko-KR'); // 날짜
+    const formattedTime = createdDate.toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }); // 시간
+    return (
     <TouchableOpacity
       key={entry.id}
       onPress={() =>
@@ -134,19 +142,15 @@ const MonthlyDetailScreen: React.FC = () => {
           </View>
         )}
         <View style={[styles.contentContainer, !isFirst && styles.indentedContent]}>
+          <Text style={styles.entryDate}>
+            {formattedDate} {formattedTime}
+          </Text>
           <Text 
             style={styles.entryContent} 
             numberOfLines={1} 
             ellipsizeMode="tail"
           >
             {getPlainTextPreview(entry.content, 20)}
-          </Text>
-          <Text style={styles.entryDate}>
-            {new Date(entry.createdAt).toLocaleTimeString('ko-KR', {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false
-            })}
           </Text>
         </View>
         
@@ -160,11 +164,11 @@ const MonthlyDetailScreen: React.FC = () => {
         )}
       </View>
     </TouchableOpacity>
-  );
+    );
+  };
 
   const renderDiaryGroup = ({ item }: { item: GroupedDiaryEntry }) => (
     <View style={styles.groupContainer}>
-      <Text style={styles.dateHeader}>{item.date}</Text>
       {item.entries.map((entry, index) => renderEntry(entry, index === 0))}
     </View>
   );
@@ -208,6 +212,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
+    marginBottom: 8,
   },
   backButton: {
     fontSize: 24,
@@ -220,7 +225,7 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 100,
   },
   emptyContainer: {
     flex: 1,
@@ -232,12 +237,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     textAlign: 'center',
-  },
-  dateHeader: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    color: '#666',
   },
   groupContainer: {
     marginBottom: 16,
@@ -254,7 +253,7 @@ const styles = StyleSheet.create({
   },
   diaryCard: {
     flexDirection: 'row',
-    padding: 12,
+    padding: 8,
     backgroundColor: 'transparent',
     position: 'relative',
   },
@@ -267,13 +266,14 @@ const styles = StyleSheet.create({
     width: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 24,
     flexShrink: 0,
   },
   daysSince: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#666',
+    paddingRight: 8,
   },
   contentContainer: {
     flex: 1,
@@ -290,13 +290,14 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   entryDate: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
+    marginBottom: 4, // 날짜와 내용 사이 간격 추가
   },
   thumbnailContainer: {
     position: 'absolute',
-    right: 16,
-    top: 16,
+    right: 8,
+    top: 8,
     width: 40,
     height: 40,
   },
