@@ -134,6 +134,7 @@ const MainScreen: React.FC = () => {
   const [modalProfileImages, setModalProfileImages] = useState<{[key: number]: string | null}>({});
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
   const [thumbnailLoaded, setThumbnailLoaded] = useState<boolean>(false);
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const activeChild = childInfos.find(child => child.id === activeChildId);
 
   // HTML 태그를 제거하고 텍스트만 추출하는 함수
@@ -475,8 +476,13 @@ const MainScreen: React.FC = () => {
   };
 
   const navigateToSettings = () => {
-    console.log("설정 기능");
+    setSettingsModalVisible(true);
     // 설정 화면으로 이동
+  };
+
+  const navigateToBackupRestore = () => {
+    setSettingsModalVisible(false); // 설정 모달 닫기
+    router.push('/backup-restore');
   };
 
   return (
@@ -584,6 +590,34 @@ const MainScreen: React.FC = () => {
             <TouchableOpacity 
               style={styles.modalCloseBtn} 
               onPress={() => setProfileModalVisible(false)}
+            >
+              <Text style={styles.modalCloseBtnText}>닫기</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={settingsModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSettingsModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.settingsModal}>
+            <Text style={styles.settingsTitle}>설정</Text>
+            
+            <TouchableOpacity 
+              style={styles.settingsItem} 
+              onPress={navigateToBackupRestore}
+            >
+              <Text style={styles.settingsItemText}>백업 및 복원</Text>
+            </TouchableOpacity>
+            
+            {/* 추가 설정 항목이 필요하면 여기에 추가 */}
+            
+            <TouchableOpacity 
+              style={styles.modalCloseBtn} 
+              onPress={() => setSettingsModalVisible(false)}
             >
               <Text style={styles.modalCloseBtnText}>닫기</Text>
             </TouchableOpacity>
@@ -825,6 +859,29 @@ const styles = StyleSheet.create({
   modalCloseBtnText: {
     fontSize: 16,
     color: '#007AFF',
+  },
+  settingsModal: {
+    width: '80%',
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+  },
+  settingsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  settingsItem: {
+    width: '100%',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E1E1E1',
+  },
+  settingsItemText: {
+    fontSize: 16,
+    color: '#333',
+    textAlign: 'center',
   },
 });
 
