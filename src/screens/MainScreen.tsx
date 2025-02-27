@@ -263,8 +263,10 @@ const MainScreen: React.FC = () => {
   };
 
   const navigateToSearch = () => {
-    console.log("검색 기능");
-    // 검색 화면으로 이동
+    router.push({
+      pathname: '/search',
+      params: { childId: activeChildId }
+    });
   };
 
   const navigateToAddDiary = () => {
