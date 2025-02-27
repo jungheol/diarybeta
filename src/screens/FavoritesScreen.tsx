@@ -28,8 +28,11 @@ const FavoritesScreen: React.FC = () => {
   const getPlainTextPreview = (html: string, maxLength: number = 30): string => {
     if (!html) return '';
     
+    // img 태그 특별 처리 (이미지 태그를 "[이미지]"로 대체)
+    let processedHtml = html.replace(/<img[^>]*>/g, ' ');
+
     // HTML 태그 제거
-    const withoutTags = html.replace(/<[^>]*>/g, ' ');
+    const withoutTags = processedHtml.replace(/<[^>]*>/g, ' ');
     
     // HTML 엔티티 변환 (예: &nbsp;, &amp; 등)
     const withoutEntities = withoutTags
@@ -56,7 +59,7 @@ const FavoritesScreen: React.FC = () => {
         `SELECT 
           diary_entry.id, 
           diary_entry.created_at AS createdAt, 
-          SUBSTR(diary_entry.content, 1, 10) AS content,
+          diary_entry.content,
           JULIANDAY(diary_entry.created_at) - JULIANDAY(child.birth_date) AS days_since_birth,
           (SELECT image_uri FROM diary_picture 
             WHERE diary_entry_id = diary_entry.id 
@@ -272,7 +275,7 @@ const styles = StyleSheet.create({
   },
   diaryCard: {
     flexDirection: 'row',
-    paddingTop: 8,
+    padding: 8,
     backgroundColor: 'transparent',
     position: 'relative',
   },
