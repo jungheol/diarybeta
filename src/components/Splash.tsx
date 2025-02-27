@@ -14,7 +14,6 @@ SplashScreen.preventAutoHideAsync();
 const Splash: React.FC = () => {
   const router = useRouter();
   const fadeAnim = new Animated.Value(0);
-  const [isInitialized, setIsInitialized] = useState(false);
   const [isDBInitialized, setIsDBInitialized] = useState(false);
   const [isSplashHidden, setIsSplashHidden] = useState(false);
 
@@ -25,7 +24,6 @@ const Splash: React.FC = () => {
       setIsDBInitialized(true);
     } catch (error) {
       console.error('Error initializing database:', error);
-      setIsInitialized(true);
     }
   };
 
