@@ -6,6 +6,7 @@ import {
   Image,
   StyleSheet,
   Text,
+  SafeAreaView,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePickerModal from "react-native-modal-datetime-picker";
@@ -78,62 +79,76 @@ const ProfileCreate: React.FC = () => {
   };
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={handleImagePicker}>
-        {photoUri ? (
-          <Image source={{ uri: photoUri }} style={styles.photo} />
-        ) : (
-          <View style={styles.photoPlaceholder}>
-            <Text style={styles.photoPlaceholderText}>사진 추가</Text>
-          </View>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        {isAdditionalProfile === 'true' && (
+          <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => router.back()}
+        >
+          <Text style={styles.backButtonText}>◀</Text>
+        </TouchableOpacity>
         )}
-      </TouchableOpacity>
+        <TouchableOpacity onPress={handleImagePicker}>
+          {photoUri ? (
+            <Image source={{ uri: photoUri }} style={styles.photo} />
+          ) : (
+            <View style={styles.photoPlaceholder}>
+              <Text style={styles.photoPlaceholderText}>사진 추가</Text>
+            </View>
+          )}
+        </TouchableOpacity>
 
-      <TextInput
-        style={styles.input}
-        placeholder="성"
-        value={lastName}
-        onChangeText={setLastName}
-      />
+        <TextInput
+          style={styles.input}
+          placeholder="성"
+          value={lastName}
+          onChangeText={setLastName}
+        />
 
-      <TextInput
-        style={styles.input}
-        placeholder="이름"
-        value={firstName}
-        onChangeText={setFirstName}
-      />
+        <TextInput
+          style={styles.input}
+          placeholder="이름"
+          value={firstName}
+          onChangeText={setFirstName}
+        />
 
-      <TouchableOpacity style={styles.input} onPress={showDatePicker}>
-        <Text style={birthDate ? styles.dateText : styles.datePlaceholder}>
-          {birthDate ? birthDate.toLocaleDateString() : '생년월일 선택'}
-        </Text>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.input} onPress={showDatePicker}>
+          <Text style={birthDate ? styles.dateText : styles.datePlaceholder}>
+            {birthDate ? birthDate.toLocaleDateString() : '생년월일 선택'}
+          </Text>
+        </TouchableOpacity>
 
-      <DateTimePickerModal
-        isVisible={isDatePickerVisible}
-        mode="date"
-        onConfirm={handleConfirm}
-        onCancel={hideDatePicker}
-      />
+        <DateTimePickerModal
+          isVisible={isDatePickerVisible}
+          mode="date"
+          onConfirm={handleConfirm}
+          onCancel={hideDatePicker}
+        />
 
-      <TouchableOpacity
-        style={[styles.button, !isFormValid && styles.buttonDisabled]}
-        disabled={!isFormValid}
-        onPress={handleSubmit}
-      >
-        <Text style={styles.buttonText}>
-          {isAdditionalProfile === 'true' ? '프로필 추가' : '시작하기'}
-        </Text>
-      </TouchableOpacity>
-    </View>
+        <TouchableOpacity
+          style={[styles.button, !isFormValid && styles.buttonDisabled]}
+          disabled={!isFormValid}
+          onPress={handleSubmit}
+        >
+          <Text style={styles.buttonText}>
+            {isAdditionalProfile === 'true' ? '프로필 추가' : '시작하기'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   container: {
     flex: 1,
+    paddingTop: 80,
     padding: 20,
-    backgroundColor: '#FFFFFF',
   },
   photo: {
     width: 120,
@@ -187,6 +202,17 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    zIndex: 1,
+    padding: 10,
+  },
+  backButtonText: {
+    fontSize: 24,
+    color: '#666',
   },
 });
 
