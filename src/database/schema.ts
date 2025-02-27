@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import * as FileSystem from 'expo-file-system';
 import { Child } from '../types';
 import { checkAndMigrateImages, initializeImageDirectories } from '../services/ImageService';
 
@@ -55,6 +56,7 @@ export const initializeApp = async () => {
   try {
     // DB 연결 및 테이블 생성
     const db = getDBConnection();
+    debugImagePaths();
     await createTables(db);
     
     // 이미지 경로 마이그레이션 확인 및 수행
@@ -65,6 +67,37 @@ export const initializeApp = async () => {
   } catch (error) {
     console.error('Error initializing app:', error);
     return false;
+  }
+};
+
+// Splash 또는 앱 시작 부분에 추가
+const debugImagePaths = async () => {
+  try {
+    const db = getDBConnection();
+    
+    // 프로필 이미지 경로 확인
+    const profiles = await db.getAllAsync<{ id: number, photoUrl: string }>(
+      'SELECT id, photo_url as photoUrl FROM child WHERE photo_url IS NOT NULL'
+    );
+    
+    console.log('PROFILE PATHS:', JSON.stringify(profiles));
+    
+    // 다이어리 이미지 경로 확인
+    const images = await db.getAllAsync<{ id: number, uri: string }>(
+      'SELECT id, image_uri as uri FROM diary_picture WHERE image_uri IS NOT NULL LIMIT 10'
+    );
+    
+    console.log('DIARY IMAGE PATHS:', JSON.stringify(images));
+    
+    // 각 경로의 파일 존재 여부 확인
+    for (const profile of profiles) {
+      if (profile.photoUrl) {
+        const info = await FileSystem.getInfoAsync(profile.photoUrl);
+        console.log(`Profile ${profile.id}: ${profile.photoUrl} exists: ${info.exists}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error debugging image paths:', error);
   }
 };
 

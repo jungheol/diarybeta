@@ -35,37 +35,31 @@ export const getImageUri = async (imagePath: string | null, defaultImage: any = 
   if (!imagePath) return defaultImage;
   
   try {
-    // 이미 절대 경로인 경우
-    if (imagePath.startsWith('file://')) {
-      // 파일 존재 여부 확인
-      const fileInfo = await FileSystem.getInfoAsync(imagePath);
-      if (fileInfo.exists) {
-        return imagePath;
-      } else {
-        console.warn('Image not found at path:', imagePath);
-        return defaultImage;
-      }
-    } 
-    // 상대 경로인 경우
-    else {
-      // 상대 경로에 따라 적절한 base 디렉토리 선택
-      let baseDir = FileSystem.documentDirectory;
-      if (imagePath.startsWith('images/')) {
-        baseDir = FileSystem.documentDirectory;
-      } else if (imagePath.startsWith('profiles/')) {
-        baseDir = FileSystem.documentDirectory;
+
+    console.log('Processing image path:', imagePath);
+    const pathsToTry = [
+        imagePath, // 원래 경로
+        imagePath.startsWith('file://') ? imagePath : `file://${imagePath}`, // file:// 접두사 추가
+        imagePath.startsWith('/') ? `file://${imagePath}` : imagePath, // 절대 경로인 경우 file:// 추가
+        `${FileSystem.documentDirectory}${imagePath.replace(/^\//, '')}`, // 문서 디렉토리 기준
+        `${FileSystem.cacheDirectory}${imagePath.replace(/^\//, '')}` // 캐시 디렉토리 기준
+      ];
+      
+      // 모든 가능한 경로 시도
+      for (const path of pathsToTry) {
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(path);
+          if (fileInfo.exists) {
+            console.log('Image found at:', path);
+            return path;
+          }
+        } catch (e) {
+          // 개별 경로 시도 실패는 무시
+        }
       }
       
-      const absolutePath = `${baseDir}${imagePath}`;
-      const fileInfo = await FileSystem.getInfoAsync(absolutePath);
-      
-      if (fileInfo.exists) {
-        return absolutePath;
-      } else {
-        console.warn('Image not found at converted path:', absolutePath);
-        return defaultImage;
-      }
-    }
+      console.warn('Image not found at any path:', imagePath);
+      return defaultImage;
   } catch (error) {
     console.error('Error processing image path:', error);
     return defaultImage;
@@ -139,21 +133,25 @@ const migrateImages = async () => {
     const profiles = await db.getAllAsync<{ id: number, photoUrl: string }>(
       'SELECT id, photo_url as photoUrl FROM child WHERE photo_url IS NOT NULL'
     );
+
+    console.log('Starting migration with profiles: ', profiles.length);
     
     for (const profile of profiles) {
       if (!profile.photoUrl) continue;
-      
+      console.log('Checking profile:', profile.id, 'URI:', profile.photoUrl);
       // 캐시 디렉토리 경로를 사용하는 경우만 마이그레이션
       if (profile.photoUrl.startsWith('file://') && profile.photoUrl.includes('/cache/')) {
         try {
           // 파일이 존재하는지 확인
           const fileInfo = await FileSystem.getInfoAsync(profile.photoUrl);
-          
+          console.log('File exists:', fileInfo.exists);
+
           if (fileInfo.exists) {
             // 새 위치에 이미지 저장
             const fileName = `profile_${profile.id}_${Date.now()}.jpg`;
             const newRelativePath = await saveImage(profile.photoUrl, 'profiles', fileName);
-            
+            console.log('Migrated to:', newRelativePath);
+
             // DB 업데이트
             await db.runAsync(
               'UPDATE child SET photo_url = ? WHERE id = ?',
@@ -161,6 +159,8 @@ const migrateImages = async () => {
             );
             
             migratedCount++;
+          } else {
+            console.warn('File not found:', profile.photoUrl);
           }
         } catch (err) {
           const error = err as Error;
