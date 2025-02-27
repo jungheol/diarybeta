@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   TextInput,
@@ -12,21 +12,85 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { getDBConnection, insertChild } from '../database/schema';
-import { saveImage } from '../services/ImageService';
+import { saveImage, getImageUri } from '../services/ImageService';
 import { Alert } from 'react-native';
 
 const ProfileCreate: React.FC = () => {
   const router = useRouter();
-  const { isAdditionalProfile } = useLocalSearchParams<{ isAdditionalProfile?: string }>();
-  const [firstName, setFirstName] = useState<string>('');
-  const [lastName, setLastName] = useState<string>('');
-  const [birthDate, setBirthDate] = useState<Date | null>(null);
-  const [photoUri, setPhotoUri] = useState<string | null>(null); // 화면 표시용 URI
+  const { isAdditionalProfile, isEdit, childId, firstName: initialFirstName, lastName: initialLastName, photoUrl: initialPhotoUrl, birthDate: initialBirthDate } = useLocalSearchParams<{ 
+    isAdditionalProfile?: string;
+    isEdit?: string;
+    childId?: string;
+    firstName?: string;
+    lastName?: string;
+    photoUrl?: string;
+    birthDate?: string;
+  }>();  
+  const [firstName, setFirstName] = useState<string>(initialFirstName || '');
+  const [lastName, setLastName] = useState<string>(initialLastName || '');
+  const [birthDate, setBirthDate] = useState<Date | null>(
+    initialBirthDate ? new Date(initialBirthDate) : null
+  );  
+  const [photoUri, setPhotoUri] = useState<string | null>(initialPhotoUrl || null);
   const [savedPhotoPath, setSavedPhotoPath] = useState<string | null>(null); // DB 저장용 상대 경로
   const [isDatePickerVisible, setDatePickerVisible] = useState<boolean>(false);
-  
 
+  const isEditMode = isEdit === 'true';
   const isFormValid = firstName && lastName && birthDate;
+
+  useEffect(() => {
+    // 수정 모드일 때 DB에서 자녀 정보 로드
+    if (isEditMode && childId) {
+      loadChildData();
+    }
+  }, [isEditMode, childId]);
+
+  const loadChildData = async () => {
+    if (!childId) return;
+
+    try {
+      const db = await getDBConnection();
+      const result = await db.getAllAsync<{
+        firstName: string;
+        lastName: string;
+        photoUrl: string | null;
+        birthDate: string;
+      }>(
+        `SELECT 
+          first_name as firstName,
+          last_name as lastName,
+          photo_url as photoUrl,
+          birth_date as birthDate
+        FROM child
+        WHERE id = ?`,
+        [childId]
+      );
+
+      if (result.length > 0) {
+        const child = result[0];
+        setFirstName(child.firstName);
+        setLastName(child.lastName);
+        
+        if (child.photoUrl) {
+          setSavedPhotoPath(child.photoUrl);
+          
+          // 이미지 URI 가져오기
+          try {
+            const uri = await getImageUri(child.photoUrl, null);
+            setPhotoUri(uri);
+          } catch (error) {
+            console.error('Error loading profile image:', error);
+          }
+        }
+        
+        if (child.birthDate) {
+          setBirthDate(new Date(child.birthDate));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load child data:', error);
+    }
+  };
 
   const handleImagePicker = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -76,23 +140,47 @@ const ProfileCreate: React.FC = () => {
 
     try {
       const db = await getDBConnection();
-
-      if (isAdditionalProfile === 'true') {
-        await db.runAsync('UPDATE child SET is_active = 0 WHERE is_active = 1');
-      }
-
-      const childId = await insertChild(db, {
-        firstName,
-        lastName,
-        birthDate: birthDate!.toISOString(),
-        photoUrl: savedPhotoPath || undefined,
-        isActive: 1,
-      });
       
-      router.replace({
-        pathname: '/main',
-        params: { childId }
-      });
+      if (isEditMode && childId) {
+        // 프로필 수정 모드
+        await db.runAsync(
+          `UPDATE child SET 
+            first_name = ?, 
+            last_name = ?, 
+            birth_date = ?,
+            photo_url = ?
+          WHERE id = ?`,
+          [
+            firstName,
+            lastName,
+            birthDate!.toISOString(),
+            savedPhotoPath,
+            childId
+          ]
+        );
+        
+        router.replace({
+          pathname: '/main',
+          params: { childId }
+        });
+      } else {
+        if (isAdditionalProfile === 'true') {
+          await db.runAsync('UPDATE child SET is_active = 0 WHERE is_active = 1');
+        }
+
+        const childId = await insertChild(db, {
+          firstName,
+          lastName,
+          birthDate: birthDate!.toISOString(),
+          photoUrl: savedPhotoPath || undefined,
+          isActive: 1,
+        });
+        
+        router.replace({
+          pathname: '/main',
+          params: { childId }
+        });
+      }
     } catch (error) {
       console.error('Failed to create profile:', error);
     }
@@ -101,7 +189,7 @@ const ProfileCreate: React.FC = () => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        {isAdditionalProfile === 'true' && (
+        {(isAdditionalProfile === 'true' || isEditMode) && (
           <TouchableOpacity 
           style={styles.backButton} 
           onPress={() => router.back()}
@@ -135,15 +223,19 @@ const ProfileCreate: React.FC = () => {
 
         <TouchableOpacity style={styles.input} onPress={showDatePicker}>
           <Text style={birthDate ? styles.dateText : styles.datePlaceholder}>
-            {birthDate ? birthDate.toLocaleDateString() : '생년월일 선택'}
+          {birthDate 
+            ? `${birthDate.toLocaleDateString()} ${birthDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+            : '생년월일 선택'}
           </Text>
         </TouchableOpacity>
 
         <DateTimePickerModal
           isVisible={isDatePickerVisible}
-          mode="date"
+          mode="datetime"
           onConfirm={handleConfirm}
           onCancel={hideDatePicker}
+          date={birthDate || new Date()}
+          display='inline'
         />
 
         <TouchableOpacity
@@ -152,7 +244,7 @@ const ProfileCreate: React.FC = () => {
           onPress={handleSubmit}
         >
           <Text style={styles.buttonText}>
-            {isAdditionalProfile === 'true' ? '프로필 추가' : '시작하기'}
+            {isEditMode ? '저장하기' : (isAdditionalProfile === 'true' ? '프로필 추가' : '시작하기')}
           </Text>
         </TouchableOpacity>
       </View>

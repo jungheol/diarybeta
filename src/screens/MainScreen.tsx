@@ -219,7 +219,8 @@ const MainScreen: React.FC = () => {
           id,
           first_name as firstName, 
           last_name as lastName, 
-          photo_url as photoUrl, 
+          photo_url as photoUrl,
+          birth_date as birthDate, 
           is_active as isActive 
         FROM child`
       );
@@ -237,6 +238,17 @@ const MainScreen: React.FC = () => {
     try {
       if (child.isActive === 1) {
         setProfileModalVisible(false);
+        router.push({
+          pathname: '/profile-create',
+          params: { 
+            isEdit: 'true',
+            childId: child.id.toString(),
+            firstName: child.firstName,
+            lastName: child.lastName,
+            photoUrl: child.photoUrl || '',
+            birthDate: child.birthDate
+          }
+        });
         return;
       }
 
