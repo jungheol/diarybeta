@@ -21,7 +21,8 @@ const ProfileCreate: React.FC = () => {
   const [firstName, setFirstName] = useState<string>('');
   const [lastName, setLastName] = useState<string>('');
   const [birthDate, setBirthDate] = useState<Date | null>(null);
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoUri, setPhotoUri] = useState<string | null>(null); // 화면 표시용 URI
+  const [savedPhotoPath, setSavedPhotoPath] = useState<string | null>(null); // DB 저장용 상대 경로
   const [isDatePickerVisible, setDatePickerVisible] = useState<boolean>(false);
   
 
@@ -45,8 +46,11 @@ const ProfileCreate: React.FC = () => {
           `profile_${Date.now()}.jpg`
         );
         
-        // 상대 경로 저장 (DB에 저장될 경로)
-        setPhotoUri(savedRelativePath);
+        // 원본 이미지 URI 임시 저장 (화면 표시용)
+        setPhotoUri(selectedUri);
+        
+        // 나중에 폼 제출 시 사용할 상대 경로 저장
+        setSavedPhotoPath(savedRelativePath);
       } catch (error) {
         console.error('Error saving profile image:', error);
         Alert.alert('오류', '프로필 이미지를 저장하는 중 문제가 발생했습니다.');
@@ -81,7 +85,7 @@ const ProfileCreate: React.FC = () => {
         firstName,
         lastName,
         birthDate: birthDate!.toISOString(),
-        photoUrl: photoUri || undefined,
+        photoUrl: savedPhotoPath || undefined,
         isActive: 1,
       });
       
