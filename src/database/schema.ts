@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 import { Child } from '../types';
+import { checkAndMigrateImages, initializeImageDirectories } from '../services/ImageService';
 
 // Database connection
 export const getDBConnection = () => {
@@ -35,10 +36,35 @@ export const createTables = async (db: SQLite.SQLiteDatabase) => {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (diary_entry_id) REFERENCES diary_entry (id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
+
+    await initializeImageDirectories();
+    
+    return db;
   } catch (error) {
     console.error('Error creating tables:', error);
     throw error;
+  }
+};
+
+export const initializeApp = async () => {
+  try {
+    // DB 연결 및 테이블 생성
+    const db = getDBConnection();
+    await createTables(db);
+    
+    // 이미지 경로 마이그레이션 확인 및 수행
+    const migrationResult = await checkAndMigrateImages();
+    console.log('Image migration result:', migrationResult);
+    
+    return true;
+  } catch (error) {
+    console.error('Error initializing app:', error);
+    return false;
   }
 };
 

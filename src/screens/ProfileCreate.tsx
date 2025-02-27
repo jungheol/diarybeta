@@ -12,6 +12,8 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { getDBConnection, insertChild } from '../database/schema';
+import { saveImage } from '../services/ImageService';
+import { Alert } from 'react-native';
 
 const ProfileCreate: React.FC = () => {
   const router = useRouter();
@@ -34,7 +36,21 @@ const ProfileCreate: React.FC = () => {
     });
 
     if (!result.canceled && result.assets[0].uri) {
-      setPhotoUri(result.assets[0].uri);
+      try {
+        // 선택된 이미지를 영구 저장소에 저장
+        const selectedUri = result.assets[0].uri;
+        const savedRelativePath = await saveImage(
+          selectedUri, 
+          'profiles', 
+          `profile_${Date.now()}.jpg`
+        );
+        
+        // 상대 경로 저장 (DB에 저장될 경로)
+        setPhotoUri(savedRelativePath);
+      } catch (error) {
+        console.error('Error saving profile image:', error);
+        Alert.alert('오류', '프로필 이미지를 저장하는 중 문제가 발생했습니다.');
+      }
     }
   };
 

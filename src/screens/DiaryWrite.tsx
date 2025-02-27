@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { getDBConnection } from '../database/schema';
 import { DiaryImage } from '../types';
 import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
+import { saveImage } from '../services/ImageService';
 
 const BUTTON_HEIGHT = 60; // 사진 추가 버튼의 높이
 const KEYBOARD_MARGIN = 8; // 키보드 위 여유 공간
@@ -66,43 +67,42 @@ const DiaryWrite: React.FC = () => {
     });
 
     if (!result.canceled && result.assets[0].uri) {
-      const imageId = `${Date.now()}`;
-      const newImage: DiaryImage = {
-        id: imageId,
-        uri: result.assets[0].uri
-      };
-      
-      setImages([...images, newImage]);
-      
       // Base64 인코딩을 사용한 이미지 삽입
       try {
-        // 이미지를 Base64로 인코딩
-        const imageUri = result.assets[0].uri;
-        console.log('이미지 URI:', imageUri);
-        
-        const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: FileSystem.EncodingType.Base64 });
-        const base64Uri = `data:image/jpeg;base64,${base64}`;
-        
-        // 이미지 객체 추가
+        // 고유 이미지 ID 생성
         const imageId = `${Date.now()}`;
+        const selectedUri = result.assets[0].uri;
+        
+        // 이미지를 영구 저장소에 저장
+        const savedRelativePath = await saveImage(
+          selectedUri, 
+          'images', 
+          `diary_${imageId}.jpg`
+        );
+        
+        // 이미지 객체 추가 (이제 상대 경로 저장)
         const newImage: DiaryImage = {
           id: imageId,
-          uri: imageUri
+          uri: savedRelativePath // 상대 경로로 저장
         };
         setImages([...images, newImage]);
+        
+        // 이미지를 Base64로 인코딩하여 에디터에 표시
+        const base64 = await FileSystem.readAsStringAsync(selectedUri, { 
+          encoding: FileSystem.EncodingType.Base64 
+        });
+        const base64Uri = `data:image/jpeg;base64,${base64}`;
         
         // Base64 이미지 삽입 (이미지 뒤에 줄바꿈 추가)
         const imgTag = `<img src="${base64Uri}" data-id="${imageId}" alt="diary image" style="max-width:100%; height:auto; margin:10px 0;" /><br><br>`;
         richTextRef.current?.insertHTML(imgTag);
         
-        console.log('이미지 Base64 삽입 완료 (길이):', base64.length);
-        
         // 이미지 삽입 후 포커스를 에디터로 되돌림
         setTimeout(() => {
           richTextRef.current?.focusContentEditor();
-        }, 500); // 시간을 조금 더 늘려 에디터가 렌더링될 시간 확보
+        }, 500);
       } catch (error) {
-        console.error('이미지 Base64 변환 오류:', error);
+        console.error('이미지 처리 오류:', error);
         Alert.alert('오류', '이미지를 추가하는 데 문제가 발생했습니다.');
       }
     }

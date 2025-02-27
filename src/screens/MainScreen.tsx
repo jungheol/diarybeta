@@ -13,6 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { getDBConnection } from '../database/schema';
 import { DiaryEntry, Child } from '../types';
+import { getImageUri } from '../services/ImageService';
 
 interface GroupedDiaryEntry {
   daysSinceBirth: number;
@@ -20,13 +21,119 @@ interface GroupedDiaryEntry {
   entries: DiaryEntry[];
 }
 
+const DiaryEntryItem: React.FC<{
+  entry: DiaryEntry;
+  isFirst: boolean;
+  childId: number | null;
+  onPress: () => void;
+}> = ({ entry, isFirst, childId, onPress }) => {
+  const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
+  const [thumbnailLoaded, setThumbnailLoaded] = useState<boolean>(false);
+  
+  // 날짜와 시간을 분리하여 표시
+  const createdDate = new Date(entry.createdAt);
+  const formattedDate = createdDate.toLocaleDateString('ko-KR');
+  const formattedTime = createdDate.toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+
+  const getPlainTextPreview = (html: string, maxLength: number = 30): string => {
+    if (!html) return '';
+    
+    // img 태그 특별 처리 (이미지 태그를 "[이미지]"로 대체)
+    let processedHtml = html.replace(/<img[^>]*>/g, ' ');
+
+    // HTML 태그 제거
+    const withoutTags = processedHtml.replace(/<[^>]*>/g, ' ');
+    
+    // HTML 엔티티 변환 (예: &nbsp;, &amp; 등)
+    const withoutEntities = withoutTags
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+    
+    // 텍스트 정리 (연속된 공백, 탭, 줄바꿈 등을 하나의 공백으로 대체)
+    const cleanText = withoutEntities.replace(/\s+/g, ' ').trim();
+    
+    // 최대 길이로 자르기
+    return cleanText.length > maxLength 
+      ? cleanText.substring(0, maxLength) + '...' 
+      : cleanText;
+  };
+  
+  useEffect(() => {
+    const loadThumbnail = async () => {
+      if (entry.thumbnailUri) {
+        try {
+          const uri = await getImageUri(entry.thumbnailUri, null);
+          setThumbnailUri(uri);
+          setThumbnailLoaded(true);
+        } catch (error) {
+          console.error('Error loading thumbnail:', error);
+          setThumbnailUri(null);
+          setThumbnailLoaded(true);
+        }
+      } else {
+        setThumbnailLoaded(true);
+      }
+    };
+    
+    loadThumbnail();
+  }, [entry.thumbnailUri]);
+  
+  return (
+    <TouchableOpacity onPress={onPress}>
+      <View style={[styles.diaryCard, !isFirst && styles.subsequentEntry]}>
+        {isFirst && (
+          <View style={styles.daysSinceContainer}>
+            <Text style={styles.daysSince}>
+              {Math.floor(entry.days_since_birth) >= 0 
+                ? `+${Math.floor(entry.days_since_birth)}` 
+                : `${Math.floor(entry.days_since_birth)}`}
+            </Text>
+          </View>
+        )}
+        <View style={[styles.contentContainer, !isFirst && styles.indentedContent]}>
+          <Text style={styles.entryDate}>
+            {formattedDate} {formattedTime}
+          </Text>
+          <Text 
+            style={styles.entryContent} 
+            numberOfLines={1} 
+            ellipsizeMode="tail"
+          >
+            {getPlainTextPreview(entry.content, 20)}
+          </Text>
+        </View>
+                  
+        {thumbnailLoaded && thumbnailUri && (
+          <View style={styles.thumbnailContainer}>
+            <Image 
+              source={{ uri: thumbnailUri }} 
+              style={styles.thumbnailImage}
+            />
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+};
+
 const MainScreen: React.FC = () => {
   const router = useRouter();
   const [childInfos, setChildInfos] = useState<Child[]>([]);
   const [diaryEntries, setDiaryEntries] = useState<GroupedDiaryEntry[]>([]);
   const [activeChildId, setActiveChildId] = useState<number | null>(null);
-  const [menuModalVisible, setMenuModalVisible] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
+  const [profileImageUri, setProfileImageUri] = useState<string | null>(null);
+  const [modalProfileImages, setModalProfileImages] = useState<{[key: number]: string | null}>({});
+  const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
+  const [thumbnailLoaded, setThumbnailLoaded] = useState<boolean>(false);
   const activeChild = childInfos.find(child => child.id === activeChildId);
 
   // HTML 태그를 제거하고 텍스트만 추출하는 함수
@@ -168,6 +275,26 @@ const MainScreen: React.FC = () => {
     });
   };
 
+  const loadModalProfileImages = async () => {
+    const images: {[key: number]: string | null} = {};
+    
+    for (const child of childInfos) {
+      if (child.photoUrl) {
+        try {
+          const uri = await getImageUri(child.photoUrl, null);
+          images[child.id] = uri;
+        } catch (error) {
+          console.error(`Error loading profile image for child ${child.id}:`, error);
+          images[child.id] = null;
+        }
+      } else {
+        images[child.id] = null;
+      }
+    }
+    
+    setModalProfileImages(images);
+  };
+
   // 의존성: activeChildId가 변경될 때 다이어리 로드
   useEffect(() => {
     if (activeChildId) {
@@ -189,6 +316,30 @@ const MainScreen: React.FC = () => {
     }, [activeChildId])
   );
 
+  useEffect(() => {
+    if (profileModalVisible && childInfos.length > 0) {
+      loadModalProfileImages();
+    }
+  }, [profileModalVisible, childInfos]);
+
+  useEffect(() => {
+    const loadProfileImage = async () => {
+      if (activeChild?.photoUrl) {
+        try {
+          const uri = await getImageUri(activeChild.photoUrl, null);
+          setProfileImageUri(uri);
+        } catch (error) {
+          console.error('Error loading profile image:', error);
+          setProfileImageUri(null);
+        }
+      } else {
+        setProfileImageUri(null);
+      }
+    };
+    
+    loadProfileImage();
+  }, [activeChild]);
+
   const renderEntry = (entry: DiaryEntry, isFirst: boolean) => {
     // 날짜와 시간을 분리하여 표시
     const createdDate = new Date(entry.createdAt);
@@ -198,6 +349,26 @@ const MainScreen: React.FC = () => {
       minute: '2-digit',
       hour12: false
     }); // 시간
+
+    useEffect(() => {
+      const loadThumbnail = async () => {
+        if (entry.thumbnailUri) {
+          try {
+            const uri = await getImageUri(entry.thumbnailUri, null);
+            setThumbnailUri(uri);
+            setThumbnailLoaded(true);
+          } catch (error) {
+            console.error('Error loading thumbnail:', error);
+            setThumbnailUri(null);
+            setThumbnailLoaded(true);
+          }
+        } else {
+          setThumbnailLoaded(true);
+        }
+      };
+      
+      loadThumbnail();
+    }, [entry.thumbnailUri]);
     
     return (
       <TouchableOpacity
@@ -232,11 +403,11 @@ const MainScreen: React.FC = () => {
               {getPlainTextPreview(entry.content, 20)}
             </Text>
           </View>
-          
-          {entry.thumbnailUri && (
+                    
+          {thumbnailLoaded && thumbnailUri && (
             <View style={styles.thumbnailContainer}>
               <Image 
-                source={{ uri: entry.thumbnailUri }} 
+                source={{ uri: thumbnailUri }} 
                 style={styles.thumbnailImage}
               />
             </View>
@@ -249,7 +420,18 @@ const MainScreen: React.FC = () => {
   // Render group of entries
   const renderDiaryGroup = ({ item }: { item: GroupedDiaryEntry }) => (
     <View style={styles.groupContainer}>
-      {item.entries.map((entry, index) => renderEntry(entry, index === 0))}
+      {item.entries.map((entry, index) => (
+        <DiaryEntryItem 
+          key={entry.id}
+          entry={entry} 
+          isFirst={index === 0} 
+          childId={activeChildId}
+          onPress={() => router.push({
+            pathname: '/diary-edit',
+            params: { diaryId: entry.id, childId: activeChildId },
+          })}
+        />
+      ))}
     </View>
   );
 
@@ -291,10 +473,10 @@ const MainScreen: React.FC = () => {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity style={styles.profileBtn} onPress={openProfileModal}>
-            <Image 
-              source={activeChild?.photoUrl ? { uri: activeChild.photoUrl } : require('../../assets/images/profile.jpeg')}
-              style={styles.profileImage}
-            />
+          <Image 
+            source={profileImageUri ? { uri: profileImageUri } : require('../../assets/images/profile.jpeg')}
+            style={styles.profileImage}
+          />
           </TouchableOpacity>
           
           {/* 아이 이름 및 드롭다운 아이콘 */}
@@ -358,10 +540,12 @@ const MainScreen: React.FC = () => {
               childInfos.map((child, index) => (
                 <TouchableOpacity key={index} onPress={() => handleProfileChange(child)}>
                   <View key={index} style={styles.childRow}>
-                    <Image 
-                      source={child.photoUrl ? { uri: child.photoUrl } : require('../../assets/images/profile.jpeg')}
-                      style={styles.modalProfileImage}
-                    />
+                  <Image 
+                    source={modalProfileImages[child.id] 
+                      ? { uri: modalProfileImages[child.id] } 
+                      : require('../../assets/images/profile.jpeg')}
+                    style={styles.modalProfileImage}
+                  />
                     <View style={styles.childInfoContainer}>
                       <Text style={styles.modalChildName}>
                         {child.lastName} {child.firstName}

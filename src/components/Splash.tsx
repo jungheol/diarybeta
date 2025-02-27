@@ -1,30 +1,31 @@
 import React, { useEffect, useState } from 'react';
 import {
   View,
-  Image,
   StyleSheet,
   Animated,
   Dimensions
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { createTables, getDBConnection } from '../database/schema';
+import { getDBConnection, initializeApp } from '../database/schema';
 
 SplashScreen.preventAutoHideAsync();
 
 const Splash: React.FC = () => {
   const router = useRouter();
   const fadeAnim = new Animated.Value(0);
+  const [isInitialized, setIsInitialized] = useState(false);
   const [isDBInitialized, setIsDBInitialized] = useState(false);
+  const [isSplashHidden, setIsSplashHidden] = useState(false);
 
   // 데이터베이스 초기화 함수
   const initializeDatabase = async () => {
     try {
-      const db = getDBConnection();
-      await createTables(db);
+      await initializeApp();
       setIsDBInitialized(true);
     } catch (error) {
       console.error('Error initializing database:', error);
+      setIsInitialized(true);
     }
   };
 
@@ -80,6 +81,7 @@ const Splash: React.FC = () => {
 
         // 네이티브 스플래시 스크린 숨기기
         await SplashScreen.hideAsync();
+        setIsSplashHidden(true);
 
         // 라우팅 처리
         const activeChildId = await getActiveChildId();
@@ -93,11 +95,18 @@ const Splash: React.FC = () => {
         }
       } catch (error) {
         console.error('Error during splash animation:', error);
+        setIsSplashHidden(true);
       }
     };
 
     handleSplashAnimation();
   }, [isDBInitialized]);
+
+  useEffect(() => {
+    if (!isSplashHidden) return;
+    
+    // 애니메이션 및 라우팅 코드...
+  }, [isSplashHidden, fadeAnim, router]);
 
   return (
     <View style={styles.container}>
