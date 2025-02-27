@@ -182,20 +182,12 @@ const MonthlyDetailScreen: React.FC = () => {
         <Text style={styles.headerTitle}>{monthTitle}</Text>
       </View>
 
-      {diaryEntries.length > 0 ? (
-        <FlatList
-          data={diaryEntries}
-          renderItem={renderDiaryGroup}
-          keyExtractor={item => item.date}
-          contentContainerStyle={styles.listContainer}
-        />
-      ) : (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>
-            {monthTitle}에 작성된 일기가 없습니다.
-          </Text>
-        </View>
-      )}
+      <FlatList
+        data={diaryEntries}
+        renderItem={renderDiaryGroup}
+        keyExtractor={item => item.date}
+        contentContainerStyle={styles.listContainer}
+      />
     </SafeAreaView>
   );
 };
@@ -227,17 +219,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 100,
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-  },
   groupContainer: {
     marginBottom: 16,
     backgroundColor: '#FFFFFF',
@@ -249,7 +230,10 @@ const styles = StyleSheet.create({
     elevation: 3,
     width: '100%',
     overflow: 'hidden',
-    padding: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
+    paddingLeft: 0,
+    paddingRight: 12,
   },
   diaryCard: {
     flexDirection: 'row',
@@ -263,36 +247,38 @@ const styles = StyleSheet.create({
     paddingLeft: 82,
   },
   daysSinceContainer: {
-    width: 50,
+    width: 64,
     justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 24,
+    alignItems: 'flex-start',
+    marginRight: 12,
     flexShrink: 0,
+    paddingLeft: 4,
   },
   daysSince: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#666',
-    paddingRight: 8,
+    paddingRight: 4,
   },
   contentContainer: {
     flex: 1,
     justifyContent: 'center',
     paddingRight: 56,
+    paddingLeft: 4,
   },
   indentedContent: {
-    marginLeft: 0,
+    marginLeft: 2,
+  },
+  entryDate: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4, // 날짜와 내용 사이 간격 추가
   },
   entryContent: {
     fontSize: 16,
     color: '#333',
     marginBottom: 4,
     width: '100%',
-  },
-  entryDate: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4, // 날짜와 내용 사이 간격 추가
   },
   thumbnailContainer: {
     position: 'absolute',
