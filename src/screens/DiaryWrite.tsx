@@ -13,6 +13,7 @@ import {
   Keyboard,
   KeyboardEvent,
 } from 'react-native';
+import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { getDBConnection } from '../database/schema';
@@ -29,7 +30,8 @@ const DiaryWrite: React.FC = () => {
   const [content, setContent] = useState<string>('');
   const [images, setImages] = useState<DiaryImage[]>([]);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const currentDate = new Date();
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date()); // 현재 날짜로 초기화
+  const [isDatePickerVisible, setDatePickerVisible] = useState<boolean>(false);
   
   const richTextRef = useRef<RichEditor>(null);
 
@@ -127,6 +129,19 @@ const DiaryWrite: React.FC = () => {
     return imageIds;
   };
 
+  const showDatePicker = () => {
+    setDatePickerVisible(true);
+  };
+
+  const hideDatePicker = () => {
+    setDatePickerVisible(false);
+  };
+
+  const handleConfirm = (date: Date) => {
+    setSelectedDate(date);
+    hideDatePicker();
+  };
+
   const handleSave = async () => {
     if (!content.trim()) return;
 
@@ -140,8 +155,8 @@ const DiaryWrite: React.FC = () => {
       const db = await getDBConnection();
       await db.withTransactionAsync(async () => {
         const diaryResult = await db.runAsync(
-          `INSERT INTO diary_entry (child_id, content) VALUES (?, ?)`,
-          [childId, content.trim()]
+          `INSERT INTO diary_entry (child_id, content, created_at) VALUES (?, ?, ?)`,
+          [childId, content.trim(), selectedDate.toISOString()] // 선택된 날짜 사용
         );
         
         const diaryId = diaryResult.lastInsertRowId;
@@ -171,9 +186,12 @@ const DiaryWrite: React.FC = () => {
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={styles.backButton}>◀</Text>
           </TouchableOpacity>
-          <Text style={styles.date}>
-            {currentDate.toLocaleDateString()} {currentDate.toLocaleTimeString()}
-          </Text>
+          <TouchableOpacity onPress={showDatePicker}>
+            <Text style={styles.date}>
+              {selectedDate.toLocaleDateString()} {selectedDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+              <Text style={styles.editDateIcon}> ✎</Text>
+            </Text>
+          </TouchableOpacity>
         </View>
         <TouchableOpacity
           style={[styles.saveButton, !content.trim() && styles.saveButtonDisabled]}
@@ -183,6 +201,17 @@ const DiaryWrite: React.FC = () => {
           <Text style={styles.saveButtonText}>✓</Text>
         </TouchableOpacity>
       </View>
+
+      <DateTimePickerModal
+        isVisible={isDatePickerVisible}
+        mode="datetime"
+        onConfirm={handleConfirm}
+        onCancel={hideDatePicker}
+        date={selectedDate}
+        confirmTextIOS="확인"
+        cancelTextIOS="취소"
+        display='inline'
+      />
       
       {/* 리치 텍스트 에디터 - 기본 설정만 사용 */}
       <RichEditor
@@ -251,6 +280,10 @@ const styles = StyleSheet.create({
   date: {
     fontSize: 16,
     color: '#666',
+  },
+  editDateIcon: {
+    fontSize: 14,
+    color: '#007AFF',
   },
   saveButton: {
     width: 40,

@@ -13,6 +13,7 @@ import {
   Keyboard,
   KeyboardEvent,
 } from 'react-native';
+import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { getDBConnection } from '../database/schema';
@@ -27,10 +28,11 @@ const DiaryEdit: React.FC = () => {
   const { diaryId, childId } = useLocalSearchParams<{ diaryId: string; childId: string }>();
   const [content, setContent] = useState<string>('');
   const [images, setImages] = useState<DiaryImage[]>([]);
-  const [createdAt, setCreatedAt] = useState<string>('');
   const [bookmark, setBookmark] = useState<number>(0);
   const [menuModalVisible, setMenuModalVisible] = useState<boolean>(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [isDatePickerVisible, setDatePickerVisible] = useState<boolean>(false); 
   
   const richTextRef = useRef<RichEditor>(null);
 
@@ -76,7 +78,7 @@ const DiaryEdit: React.FC = () => {
         // 기존 텍스트 및 이미지 마커 형식에서 HTML 형식으로 변환
         const htmlContent = await convertToHtml(result.content, imageResults);
         setContent(htmlContent);
-        setCreatedAt(result.created_at);
+        setSelectedDate(new Date(result.created_at));
         setBookmark(result.bookmark);
       }
 
@@ -142,59 +144,72 @@ const DiaryEdit: React.FC = () => {
   };
 
   const pickImage = async () => {
-      if (images.length >= 10) {
-        Alert.alert('알림', '사진은 최대 10장까지만 추가할 수 있습니다.');
-        return;
-      }
-  
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 1,
-      });
-  
-      if (!result.canceled && result.assets[0].uri) {
+    if (images.length >= 10) {
+      Alert.alert('알림', '사진은 최대 10장까지만 추가할 수 있습니다.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled && result.assets[0].uri) {
+      const imageId = `${Date.now()}`;
+      const newImage: DiaryImage = {
+        id: imageId,
+        uri: result.assets[0].uri
+      };
+      
+      setImages([...images, newImage]);
+      
+      // Base64 인코딩을 사용한 이미지 삽입
+      try {
+        // 이미지를 Base64로 인코딩
+        const imageUri = result.assets[0].uri;
+        console.log('이미지 URI:', imageUri);
+        
+        const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: FileSystem.EncodingType.Base64 });
+        const base64Uri = `data:image/jpeg;base64,${base64}`;
+        
+        // 이미지 객체 추가
         const imageId = `${Date.now()}`;
         const newImage: DiaryImage = {
           id: imageId,
-          uri: result.assets[0].uri
+          uri: imageUri
         };
-        
         setImages([...images, newImage]);
         
-        // Base64 인코딩을 사용한 이미지 삽입
-        try {
-          // 이미지를 Base64로 인코딩
-          const imageUri = result.assets[0].uri;
-          console.log('이미지 URI:', imageUri);
-          
-          const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: FileSystem.EncodingType.Base64 });
-          const base64Uri = `data:image/jpeg;base64,${base64}`;
-          
-          // 이미지 객체 추가
-          const imageId = `${Date.now()}`;
-          const newImage: DiaryImage = {
-            id: imageId,
-            uri: imageUri
-          };
-          setImages([...images, newImage]);
-          
-          // Base64 이미지 삽입 (이미지 뒤에 줄바꿈 추가)
-          const imgTag = `<img src="${base64Uri}" data-id="${imageId}" alt="diary image" style="max-width:100%; height:auto; margin:10px 0;" /><br><br>`;
-          richTextRef.current?.insertHTML(imgTag);
-          
-          console.log('이미지 Base64 삽입 완료 (길이):', base64.length);
-          
-          // 이미지 삽입 후 포커스를 에디터로 되돌림
-          setTimeout(() => {
-            richTextRef.current?.focusContentEditor();
-          }, 500); // 시간을 조금 더 늘려 에디터가 렌더링될 시간 확보
-        } catch (error) {
-          console.error('이미지 Base64 변환 오류:', error);
-          Alert.alert('오류', '이미지를 추가하는 데 문제가 발생했습니다.');
-        }
+        // Base64 이미지 삽입 (이미지 뒤에 줄바꿈 추가)
+        const imgTag = `<img src="${base64Uri}" data-id="${imageId}" alt="diary image" style="max-width:100%; height:auto; margin:10px 0;" /><br><br>`;
+        richTextRef.current?.insertHTML(imgTag);
+        
+        console.log('이미지 Base64 삽입 완료 (길이):', base64.length);
+        
+        // 이미지 삽입 후 포커스를 에디터로 되돌림
+        setTimeout(() => {
+          richTextRef.current?.focusContentEditor();
+        }, 500); // 시간을 조금 더 늘려 에디터가 렌더링될 시간 확보
+      } catch (error) {
+        console.error('이미지 Base64 변환 오류:', error);
+        Alert.alert('오류', '이미지를 추가하는 데 문제가 발생했습니다.');
       }
-    };
+    }
+  };
+
+  const showDatePicker = () => {
+    setDatePickerVisible(true);
+  };
+
+  const hideDatePicker = () => {
+    setDatePickerVisible(false);
+  };
+
+  const handleConfirm = (date: Date) => {
+    setSelectedDate(date);
+    hideDatePicker();
+  };
 
   const handleUpdate = async () => {
     if (!content.trim()) return;
@@ -209,8 +224,8 @@ const DiaryEdit: React.FC = () => {
       const db = await getDBConnection();
       await db.withTransactionAsync(async () => {
         await db.runAsync(
-          `UPDATE diary_entry SET content = ? WHERE id = ?`,
-          [content.trim(), diaryId]
+          `UPDATE diary_entry SET content = ?, created_at = ? WHERE id = ?`,
+          [content.trim(), selectedDate.toISOString(), diaryId]
         );
 
         await db.runAsync(
@@ -281,9 +296,12 @@ const DiaryEdit: React.FC = () => {
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={styles.backButton}>◀</Text>
           </TouchableOpacity>
-          <Text style={styles.date}>
-            {new Date(createdAt).toLocaleDateString()} {new Date(createdAt).toLocaleTimeString()}
-          </Text>
+          <TouchableOpacity onPress={showDatePicker}>
+            <Text style={styles.date}>
+              {selectedDate.toLocaleDateString()} {selectedDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+              <Text style={styles.editDateIcon}> ✎</Text>
+            </Text>
+          </TouchableOpacity>
         </View>
         <View style={styles.buttonsContainer}>
           <TouchableOpacity 
@@ -301,6 +319,17 @@ const DiaryEdit: React.FC = () => {
           </TouchableOpacity>
         </View>
       </View>
+
+      <DateTimePickerModal
+        isVisible={isDatePickerVisible}
+        mode="datetime"
+        onConfirm={handleConfirm}
+        onCancel={hideDatePicker}
+        date={selectedDate}
+        confirmTextIOS="확인"
+        cancelTextIOS="취소"
+        display='inline'
+      />
       
       {/* 리치 텍스트 에디터 */}
       <RichEditor
@@ -412,6 +441,10 @@ const styles = StyleSheet.create({
   date: {
     fontSize: 16,
     color: '#666',
+  },
+  editDateIcon: {
+    fontSize: 14,
+    color: '#007AFF',
   },
   buttonsContainer: {
     flexDirection: 'row',

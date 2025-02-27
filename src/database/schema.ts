@@ -61,7 +61,6 @@ export const initializeApp = async () => {
     
     // 이미지 경로 마이그레이션 확인 및 수행
     const migrationResult = await checkAndMigrateImages();
-    console.log('Image migration result:', migrationResult);
     
     return true;
   } catch (error) {
@@ -79,16 +78,12 @@ const debugImagePaths = async () => {
     const profiles = await db.getAllAsync<{ id: number, photoUrl: string }>(
       'SELECT id, photo_url as photoUrl FROM child WHERE photo_url IS NOT NULL'
     );
-    
-    console.log('PROFILE PATHS:', JSON.stringify(profiles));
-    
+        
     // 다이어리 이미지 경로 확인
     const images = await db.getAllAsync<{ id: number, uri: string }>(
       'SELECT id, image_uri as uri FROM diary_picture WHERE image_uri IS NOT NULL LIMIT 10'
     );
-    
-    console.log('DIARY IMAGE PATHS:', JSON.stringify(images));
-    
+        
     // 각 경로의 파일 존재 여부 확인
     for (const profile of profiles) {
       if (profile.photoUrl) {
