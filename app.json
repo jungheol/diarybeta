@@ -14,8 +14,8 @@
       "bundleIdentifier": "com.diary.1095-beta",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "iCloudContainerEnvironment": "Development",
-        "UIBackgroundModes": ["remote-notification"]
+        "iCloudContainerEnvironment": "Production",
+        "UIBackgroundModes": []
       },
       "entitlements": {
         "com.apple.developer.icloud-container-identifiers": [
@@ -27,8 +27,7 @@
         ],
         "com.apple.developer.ubiquity-container-identifiers": [
           "iCloud.com.diary.1095-beta"
-        ],
-        "com.apple.developer.aps-environment": "development"
+        ]
       }
     },
     "android": {
@@ -53,7 +52,15 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+      "expo-build-properties",
+        {
+            "ios": {
+            "deploymentTarget": "15.5"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
