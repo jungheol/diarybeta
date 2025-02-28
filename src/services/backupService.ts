@@ -1,6 +1,7 @@
 import * as FileSystem from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
+import * as Clipboard from 'expo-clipboard';
 import { CloudStorage, CloudStorageProvider, useIsCloudAvailable } from 'react-native-cloud-storage';
 import { Alert, Platform } from 'react-native';
 import { getDBConnection } from '../database/schema';
@@ -108,21 +109,92 @@ export const createBackup = async (): Promise<string> => {
 export const uploadBackupToiCloud = async (): Promise<void> => {
   try {
     // 1. 로컬 백업 생성
+    console.log('시작: 로컬 백업 생성');
     const backupPath = await createBackup();
+    console.log('완료: 로컬 백업 생성', backupPath);
     
     // 2. 백업 파일 읽기
+    console.log('시작: 백업 파일 읽기');
     const backupData = await FileSystem.readAsStringAsync(backupPath, { encoding: 'base64' });
+    console.log('완료: 백업 파일 읽기, 크기:', backupData.length);
     
-    // 3. iCloud에 업로드
+    // 3. iCloud 사용 가능 여부 확인
+    console.log('시작: iCloud 상태 확인');
+    const isCloudAvailable = await CloudStorage.isCloudAvailable();
+    console.log('완료: iCloud 상태:', isCloudAvailable);
+    
+    if (!isCloudAvailable) {
+      throw new Error('iCloud를 사용할 수 없습니다. Apple ID로 로그인되어 있고, iCloud Drive가 활성화되어 있는지 확인하세요.');
+    }
+    
+    // 4. iCloud에 업로드
+    console.log('시작: iCloud 업로드');
     await CloudStorage.writeFile(BACKUP_FILENAME, backupData);
+    console.log('완료: iCloud 업로드');
     
-    // 4. 임시 백업 파일 삭제
+    // 5. 임시 백업 파일 삭제
+    console.log('시작: 임시 파일 삭제');
     await FileSystem.deleteAsync(backupPath, { idempotent: true });
+    console.log('완료: 임시 파일 삭제');
     
     Alert.alert('백업 완료', 'iCloud에 데이터가 성공적으로 백업되었습니다.');
   } catch (error) {
     console.error('Error uploading to iCloud:', error);
-    Alert.alert('백업 실패', '데이터를 iCloud에 업로드하는 중 오류가 발생했습니다.');
+    // 오류 세부 정보 추출
+    let errorMessage = '데이터를 iCloud에 업로드하는 중 오류가 발생했습니다.';
+    let errorDetails = '';
+    
+    if (error instanceof Error) {
+      errorDetails += `\n\n에러 유형: ${error.constructor.name}`;
+      errorDetails += `\n메시지: ${error.message}`;
+      
+      // 코드와 도메인 정보 (iOS 네이티브 에러에 존재할 수 있음)
+      if ('code' in error) {
+        errorDetails += `\n코드: ${(error as any).code}`;
+      }
+      if ('domain' in error) {
+        errorDetails += `\n도메인: ${(error as any).domain}`;
+      }
+      
+      // CloudStorage 관련 추가 정보
+      if (error.message.includes('CloudKit') || error.message.includes('iCloud')) {
+        errorDetails += `\n\niCloud 관련 오류입니다. Apple ID 로그인 상태와 iCloud Drive 설정을 확인하세요.`;
+      }
+      
+      // 스택 트레이스 로깅 (콘솔에만)
+      if (error.stack) {
+        console.error('Stack trace:', error.stack);
+      }
+    } else {
+      errorDetails += `\n\n비정형 오류: ${JSON.stringify(error)}`;
+    }
+    
+    // 확인 가능한 iCloud 상태 정보 추가
+    try {
+      const isAvailable = await CloudStorage.isCloudAvailable();
+      errorDetails += `\n\niCloud 사용 가능 상태: ${isAvailable ? '사용 가능' : '사용 불가'}`;
+    } catch (statusError) {
+      errorDetails += `\n\niCloud 상태 확인 실패: ${(statusError as Error).message}`;
+    }
+    
+    Alert.alert(
+      '백업 실패', 
+      errorMessage + errorDetails,
+      [
+        { text: '확인' },
+        { 
+          text: '오류 정보 복사',
+          onPress: async () => {
+            try {
+              await Clipboard.setStringAsync(errorDetails);
+              Alert.alert('복사됨', '오류 정보가 클립보드에 복사되었습니다.');
+            } catch (e) {
+              console.error('클립보드 복사 실패:', e);
+            }
+          } 
+        }
+      ]
+    );
   }
 };
 
